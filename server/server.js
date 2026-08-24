@@ -12,6 +12,7 @@ const rulesList = require('./rules/rules');
 const { processImageOCR } = require('./services/ocrService');
 const { runComplianceCheck } = require('./services/complianceEngine');
 const { generateInspectionPDF } = require('./services/reportService');
+const { askCopilot } = require('./services/geminiService');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -369,48 +370,44 @@ app.post('/api/copilot', protect, async (req, res) => {
     return res.status(400).json({ message: 'Question parameter is required.' });
   }
 
-  let inspection = null;
-  if (inspectionId) {
-    inspection = await db.Inspection.findOne({ inspectionId });
-  }
-
-  const query = question.toLowerCase();
-  let responseText = "I could not verify this from the configured rule base.";
-
-  if (inspection) {
-    if (query.includes('flagged') || query.includes('violation') || query.includes('issue')) {
-      if (inspection.violations && inspection.violations.length > 0) {
-        responseText = `This inspection has ${inspection.violations.length} active violations:\n` + 
-          inspection.violations.map((v, i) => `${i+1}. In ${v.field}: ${v.reason} (Rule: ${v.ruleId})`).join('\n');
-      } else {
-        responseText = "This product has passed all checks and is compliant.";
-      }
-    } else if (query.includes('score')) {
-      responseText = `The LabelGuard Compliance Score is ${inspection.score}/100. Status: ${inspection.status}.`;
-    } else if (query.includes('risk') || query.includes('why')) {
-      responseText = `Risk Level: ${inspection.riskLevel}. Factors parsed: compliance score, specific rule violations, and label confidence.`;
-    } else if (query.includes('evidence')) {
-      responseText = `Evidence coordinates are logged for verified declarations. Bounding boxes are generated for ${
-        inspection.checks.filter(c => c.evidence && c.evidence.boundingBox).map(c => c.field).join(', ')
-      }.`;
-    } else if (query.includes('missing')) {
-      const missing = Object.entries(inspection.declarations)
-        .filter(([_, f]) => f.status === 'Missing')
-        .map(([k]) => k);
-      responseText = missing.length > 0 
-        ? `Missing declarations: ${missing.join(', ')}.`
-        : "All required Legal Metrology declarations were detected.";
+  try {
+    let inspection = null;
+    if (inspectionId) {
+      inspection = await db.Inspection.findOne({ inspectionId });
     }
-  } else {
-    // General Q&A
-    if (query.includes('metrology') || query.includes('rule')) {
-      responseText = "Under the Legal Metrology (Packaged Commodities) Rules, 2011, commodities must carry specific declarations: generic name, net weight, manufacturer info, MRP, manufacture month/year, and consumer care details.";
-    } else if (query.includes('mrp')) {
-      responseText = "MRP must be declared clearly with maximum price including all taxes. The phrase 'inclusive of all taxes' is a regulatory recommendation.";
-    }
-  }
 
-  res.json({ response: responseText });
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(500).json({ message: 'Gemini API key is not configured.' });
+    }
+
+    const systemPrompt = `
+You are the LabelGuard AI Inspector Copilot, an expert assistant in Legal Metrology (Packaged Commodities) Rules, 2011.
+You help inspectors interpret inspection results, understand rule compliance, and find evidence.
+Here is the inspection context:
+${inspection ? JSON.stringify({
+  inspectionId: inspection.inspectionId,
+  productName: inspection.productName,
+  category: inspection.category,
+  score: inspection.score,
+  status: inspection.status,
+  riskLevel: inspection.riskLevel,
+  riskReasons: inspection.riskReasons,
+  declarations: inspection.declarations,
+  checks: inspection.checks,
+  violations: inspection.violations
+}, null, 2) : 'No specific inspection context is loaded yet.'}
+
+Answer the inspector's query precisely using ONLY the provided inspection data and legal metrology rules context.
+If the information is not available in the context, respond with: "I could not verify this from the configured inspection data and rule base."
+Do not invent any rules, values, or findings that are not explicitly present in the data. Keep answers professional and concise.
+`;
+
+    const responseText = await askCopilot(systemPrompt, question);
+    res.json({ response: responseText });
+  } catch (error) {
+    console.error('Copilot API error:', error.message);
+    res.status(500).json({ message: 'AI analysis temporarily unavailable.', error: error.message });
+  }
 });
 
 // ----------------------------------------------------
@@ -558,7 +555,13 @@ app.post('/api/inspections/analyze', protect, upload.fields([
       qualityMetrics: ocrResult.qualityMetrics
     });
   } catch (error) {
-    res.status(500).json({ message: 'Error analyzing package label.', error: error.message });
+    console.error("Analysis route error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      details: error.stack,
+      stage: error.stage || 'IMAGE_PROCESSING'
+    });
   }
 });
 
@@ -678,14 +681,21 @@ app.get('/api/reports/:inspectionId', async (req, res) => {
 });
 
 // Attempt database connection
+console.log('Gemini API Key configured:', !!process.env.GEMINI_API_KEY);
 mongoose.connect(mongoUri)
   .then(() => {
     console.log('MongoDB connected. Initializing server...');
+    if (!process.env.GEMINI_API_KEY) {
+      console.warn('--- WARNING: GEMINI_API_KEY IS NOT CONFIGURED ---');
+    }
     app.listen(PORT, () => console.log(`LabelGuard Server running on port ${PORT}`));
   })
   .catch(async (err) => {
     console.log('--- WARNING: DATABASE UNAVAILABLE ---');
     console.log('Starting in In-Memory Database Mode for local demo / offline execution.');
+    if (!process.env.GEMINI_API_KEY) {
+      console.warn('--- WARNING: GEMINI_API_KEY IS NOT CONFIGURED ---');
+    }
     isInMemoryMode = true;
     await seedMemoryDb();
     app.listen(PORT, () => console.log(`LabelGuard (In-Memory Fallback) running on port ${PORT}`));

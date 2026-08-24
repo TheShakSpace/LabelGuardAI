@@ -1,11 +1,12 @@
 // OCR Service Abstraction for LabelGuard AI
 const fs = require('fs');
 const path = require('path');
+const { analyzeImageWithGemini } = require('./geminiService');
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const OCR_PROVIDER = process.env.OCR_PROVIDER || 'demo';
 
-// Pre-defined demo labels database
+// Pre-defined demo labels database (used ONLY for Demo mode)
 const demoMockProducts = {
   shakti_biscuits: {
     rawText: `
@@ -27,18 +28,18 @@ Phone: 1800-22-4466
 Email: care@shaktiproducts.in
     `,
     declarations: {
-      productName: { value: "SHAKTI PREMIUM BISCUITS", status: "Detected", confidence: 98, source: "frontLabel", region: [120, 150, 400, 80] },
-      genericName: { value: "Biscuits", status: "Detected", confidence: 95, source: "frontLabel", region: [120, 240, 300, 40] },
-      mrp: { value: "Rs 40.00 (inclusive of all taxes)", status: "Detected", confidence: 97, source: "backLabel", region: [40, 520, 200, 40] },
-      netQuantity: { value: "200 g", status: "Detected", confidence: 94, source: "backLabel", region: [40, 570, 180, 40] },
-      manufacturerName: { value: "Shakti Consumer Products Ltd.", status: "Detected", confidence: 96, source: "backLabel", region: [40, 620, 350, 30] },
-      manufacturerAddress: { value: "12, Industrial Area, Phase-3, Mumbai - 400001", status: "Detected", confidence: 92, source: "backLabel", region: [40, 650, 350, 60] },
+      productName: { value: "SHAKTI PREMIUM BISCUITS", status: "Detected", confidence: 98, source: "frontLabel", region: [30, 20, 45, 12] },
+      genericName: { value: "Biscuits", status: "Detected", confidence: 95, source: "frontLabel", region: [30, 35, 40, 8] },
+      mrp: { value: "Rs 40.00 (inclusive of all taxes)", status: "Detected", confidence: 97, source: "backLabel", region: [15, 60, 40, 10] },
+      netQuantity: { value: "200 g", status: "Detected", confidence: 94, source: "backLabel", region: [15, 72, 40, 10] },
+      manufacturerName: { value: "Shakti Consumer Products Ltd.", status: "Detected", confidence: 96, source: "backLabel", region: [15, 84, 40, 10] },
+      manufacturerAddress: { value: "12, Industrial Area, Phase-3, Mumbai - 400001", status: "Detected", confidence: 92, source: "backLabel", region: [15, 84, 40, 10] },
       packerDetails: { value: "", status: "Missing", confidence: 0, source: "", region: null },
       importerDetails: { value: "", status: "Missing", confidence: 0, source: "", region: null },
-      countryOfOrigin: { value: "India", status: "Detected", confidence: 95, source: "backLabel", region: [40, 320, 180, 30] },
-      consumerCare: { value: "Phone: 1800-22-4466, Email: care@shaktiproducts.in", status: "Detected", confidence: 93, source: "backLabel", region: [40, 720, 400, 70] },
-      manufacturingDate: { value: "05/2026", status: "Detected", confidence: 97, source: "backLabel", region: [40, 470, 220, 40] },
-      packagingDate: { value: "05/2026", status: "Detected", confidence: 91, source: "backLabel", region: [40, 470, 220, 40] },
+      countryOfOrigin: { value: "India", status: "Detected", confidence: 95, source: "backLabel", region: [15, 60, 40, 10] },
+      consumerCare: { value: "Phone: 1800-22-4466, Email: care@shaktiproducts.in", status: "Detected", confidence: 93, source: "backLabel", region: [15, 84, 40, 10] },
+      manufacturingDate: { value: "05/2026", status: "Detected", confidence: 97, source: "backLabel", region: [15, 60, 40, 10] },
+      packagingDate: { value: "05/2026", status: "Detected", confidence: 91, source: "backLabel", region: [15, 60, 40, 10] },
       expiryDate: { value: "6 months from packaging", status: "Detected", confidence: 89, source: "backLabel", region: null },
       batchNumber: { value: "SB-249A2", status: "Detected", confidence: 98, source: "backLabel", region: null }
     }
@@ -54,62 +55,131 @@ Pkd: 04/2026
 Consumer feedback call: 1800-11-2233
     `,
     declarations: {
-      productName: { value: "PURECARE SILKY SHAMPOO", status: "Detected", confidence: 97, source: "frontLabel", region: [120, 150, 400, 80] },
-      genericName: { value: "Shampoo", status: "Detected", confidence: 91, source: "frontLabel", region: [120, 240, 300, 40] },
-      mrp: { value: "Rs 165", status: "Detected", confidence: 96, source: "backLabel", region: [40, 520, 200, 40] },
-      netQuantity: { value: "180 ml", status: "Detected", confidence: 95, source: "backLabel", region: [40, 570, 180, 40] },
-      manufacturerName: { value: "PureCare Industries", status: "Detected", confidence: 94, source: "backLabel", region: [40, 620, 350, 30] },
-      manufacturerAddress: { value: "Sector 5, Baddi, HP", status: "Detected", confidence: 91, source: "backLabel", region: [40, 650, 350, 60] },
+      productName: { value: "PURECARE SILKY SHAMPOO", status: "Detected", confidence: 97, source: "frontLabel", region: [30, 20, 45, 12] },
+      genericName: { value: "Shampoo", status: "Detected", confidence: 91, source: "frontLabel", region: [30, 35, 40, 8] },
+      mrp: { value: "Rs 165", status: "Detected", confidence: 96, source: "backLabel", region: [15, 60, 40, 10] },
+      netQuantity: { value: "180 ml", status: "Detected", confidence: 95, source: "backLabel", region: [15, 72, 40, 10] },
+      manufacturerName: { value: "PureCare Industries", status: "Detected", confidence: 94, source: "backLabel", region: [15, 84, 40, 10] },
+      manufacturerAddress: { value: "Sector 5, Baddi, HP", status: "Detected", confidence: 91, source: "backLabel", region: [15, 84, 40, 10] },
       packerDetails: { value: "", status: "Missing", confidence: 0, source: "", region: null },
       importerDetails: { value: "", status: "Missing", confidence: 0, source: "", region: null },
       countryOfOrigin: { value: "", status: "Missing", confidence: 0, source: "", region: null },
-      consumerCare: { value: "Call: 1800-11-2233", status: "Detected", confidence: 90, source: "backLabel", region: [40, 720, 400, 70] },
-      manufacturingDate: { value: "04/2026", status: "Detected", confidence: 95, source: "backLabel", region: [40, 470, 220, 40] },
-      packagingDate: { value: "04/2026", status: "Detected", confidence: 95, source: "backLabel", region: [40, 470, 220, 40] },
+      consumerCare: { value: "Call: 1800-11-2233", status: "Detected", confidence: 90, source: "backLabel", region: [15, 84, 40, 10] },
+      manufacturingDate: { value: "04/2026", status: "Detected", confidence: 95, source: "backLabel", region: [15, 60, 40, 10] },
+      packagingDate: { value: "04/2026", status: "Detected", confidence: 95, source: "backLabel", region: [15, 60, 40, 10] },
       expiryDate: { value: "", status: "Missing", confidence: 0, source: "", region: null },
       batchNumber: { value: "SH-103", status: "Detected", confidence: 98, source: "backLabel", region: null }
     }
   }
 };
 
-// Calculate basic image quality indicators from uploaded files
-function analyzeImageQuality(filePath) {
+/**
+ * Calculates actual image dimensions & quality metrics from file buffer
+ */
+function getActualImageMetadata(filePath) {
   try {
     if (!filePath) {
-      return { resolutionScore: 0, blurScore: 0, brightness: 0, contrast: 0, score: 0 };
+      return null;
     }
-
-    const fullPath = path.join(__dirname, '..', filePath);
+    const cleanPath = filePath.replace(/^\/+/, '');
+    const fullPath = path.isAbsolute(filePath) && !filePath.startsWith('/') && !filePath.startsWith('\\')
+      ? filePath 
+      : path.resolve(__dirname, '..', cleanPath);
     if (!fs.existsSync(fullPath)) {
-      return { resolutionScore: 90, blurScore: 85, brightness: 80, contrast: 75, score: 82 };
+      return null;
     }
 
-    const stats = fs.statSync(fullPath);
-    const sizeInKb = stats.size / 1024;
+    const buffer = fs.readFileSync(fullPath);
+    const fileSize = buffer.length;
 
-    // Estimate parameters based on file size as proxy for resolution/details
-    let resScore = sizeInKb > 300 ? 95 : (sizeInKb > 100 ? 80 : 50);
-    let blurScore = sizeInKb > 200 ? 90 : (sizeInKb > 80 ? 75 : 45);
-    let brightness = 75; // average brightness in percentage
-    let contrast = 78;   // average contrast in percentage
-    let finalScore = Math.round((resScore + blurScore + brightness + contrast) / 4);
+    let width = 1920; // default fallbacks
+    let height = 1080;
+
+    // Check PNG signature
+    if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
+      width = buffer.readUInt32BE(16);
+      height = buffer.readUInt32BE(20);
+    }
+    // Check JPEG signature
+    else if (buffer[0] === 0xFF && buffer[1] === 0xD8) {
+      let offset = 2;
+      while (offset < buffer.length) {
+        const marker = buffer.readUInt16BE(offset);
+        offset += 2;
+        if (marker === 0xFFC0 || marker === 0xFFC2) { // SOF0 or SOF2
+          height = buffer.readUInt16BE(offset + 3);
+          width = buffer.readUInt16BE(offset + 5);
+          break;
+        }
+        offset += buffer.readUInt16BE(offset);
+      }
+    }
+    // Check WebP signature
+    else if (buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46 &&
+             buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50) {
+      if (buffer[12] === 0x56 && buffer[13] === 0x50 && buffer[14] === 0x38 && buffer[15] === 0x4C) { // VP8L (lossless)
+        const val = buffer.readUInt32LE(20);
+        width = (val & 0x3FFF) + 1;
+        height = ((val >> 14) & 0x3FFF) + 1;
+      } else if (buffer[12] === 0x56 && buffer[13] === 0x50 && buffer[14] === 0x38 && buffer[15] === 0x20) { // VP8 (lossy)
+        width = buffer.readUInt16LE(26) & 0x3FFF;
+        height = buffer.readUInt16LE(28) & 0x3FFF;
+      }
+    }
+
+    // Sample pixels for brightness
+    let brightnessSum = 0;
+    let sampleCount = 0;
+    const sampleStep = Math.max(1, Math.floor(buffer.length / 5000));
+    
+    for (let i = 0; i < buffer.length; i += sampleStep) {
+      brightnessSum += buffer[i];
+      sampleCount++;
+    }
+    
+    const brightness = Math.round((brightnessSum / sampleCount) / 255 * 100);
+
+    // Compute contrast (variance of brightness)
+    let diffSqSum = 0;
+    const avgBright = brightnessSum / sampleCount;
+    for (let i = 0; i < buffer.length; i += sampleStep) {
+      diffSqSum += Math.pow(buffer[i] - avgBright, 2);
+    }
+    const contrast = Math.round(Math.min(100, Math.sqrt(diffSqSum / sampleCount) / 128 * 100));
+
+    // Compute sharpness (adjacent differences)
+    let diffSum = 0;
+    for (let i = 0; i < buffer.length - sampleStep; i += sampleStep) {
+      diffSum += Math.abs(buffer[i] - buffer[i + sampleStep]);
+    }
+    const sharpness = Math.round(Math.min(100, (diffSum / sampleCount) / 32 * 100));
+
+    // Map to normalized scores
+    const resolutionScore = Math.min(100, Math.round((width * height) / (1920 * 1080) * 100));
+    const blurScore = sharpness;
+    const score = Math.round((resolutionScore + blurScore + brightness + contrast) / 4);
 
     return {
-      resolutionScore: resScore,
-      blurScore: blurScore,
-      brightness: brightness,
-      contrast: contrast,
-      score: finalScore
+      width,
+      height,
+      fileSize,
+      resolutionScore,
+      blurScore,
+      brightness,
+      contrast,
+      score
     };
-  } catch (error) {
-    return { resolutionScore: 80, blurScore: 80, brightness: 80, contrast: 80, score: 80 };
+  } catch (e) {
+    console.error("Error analyzing image quality:", e.message);
+    return null;
   }
 }
 
 async function processImageOCR(frontImage, backImage, productKey = 'shakti_biscuits') {
-  // 1. Analyze quality metrics
-  const frontQuality = analyzeImageQuality(frontImage);
-  const backQuality = analyzeImageQuality(backImage);
+  // 1. Analyze quality metrics from real files if available
+  const frontQuality = getActualImageMetadata(frontImage) || { resolutionScore: 90, blurScore: 85, brightness: 80, contrast: 75, score: 82, width: 1920, height: 1080 };
+  const backQuality = getActualImageMetadata(backImage) || { resolutionScore: 90, blurScore: 85, brightness: 80, contrast: 75, score: 82, width: 1920, height: 1080 };
+  
   const combinedQuality = {
     resolutionScore: Math.round((frontQuality.resolutionScore + backQuality.resolutionScore) / 2),
     blurScore: Math.round((frontQuality.blurScore + backQuality.blurScore) / 2),
@@ -118,32 +188,65 @@ async function processImageOCR(frontImage, backImage, productKey = 'shakti_biscu
     score: Math.round((frontQuality.score + backQuality.score) / 2)
   };
 
+  const isRealUpload = (frontImage && !frontImage.includes('demo_')) || (backImage && !backImage.includes('demo_'));
+
   // 2. OCR Extraction Core
-  if (OCR_PROVIDER === 'gemini' && GEMINI_API_KEY) {
+  if (isRealUpload && OCR_PROVIDER === 'gemini') {
+    if (!GEMINI_API_KEY) {
+      throw new Error('GEMINI_API_KEY environment variable is missing.');
+    }
+    
+    console.log('Sending real image(s) to Gemini Vision API for extraction...');
     try {
-      console.log('Sending request to Gemini OCR provider...');
-      // Clean implementation of Gemini Vision API via direct fetch call
-      // (Placeholder for production. If key fails or returns error, we gracefully fall back).
+      const geminiResult = await analyzeImageWithGemini(frontImage, backImage);
+      
+      return {
+        rawText: geminiResult.rawText || 'OCR transcript unavailable.',
+        declarations: {
+          productName: geminiResult.productName || { value: null, confidence: 0, status: "Missing", source: "frontLabel" },
+          genericName: geminiResult.genericName || { value: null, confidence: 0, status: "Missing", source: "frontLabel" },
+          mrp: geminiResult.mrp || { value: null, confidence: 0, status: "Missing", source: "backLabel" },
+          netQuantity: geminiResult.netQuantity || { value: null, confidence: 0, status: "Missing", source: "backLabel" },
+          manufacturerName: geminiResult.manufacturerName || { value: null, confidence: 0, status: "Missing", source: "backLabel" },
+          manufacturerAddress: geminiResult.manufacturerAddress || { value: null, confidence: 0, status: "Missing", source: "backLabel" },
+          packerDetails: geminiResult.packerDetails || { value: null, confidence: 0, status: "Missing", source: "backLabel" },
+          importerDetails: geminiResult.importerDetails || { value: null, confidence: 0, status: "Missing", source: "backLabel" },
+          countryOfOrigin: geminiResult.countryOfOrigin || { value: null, confidence: 0, status: "Missing", source: "backLabel" },
+          consumerCare: geminiResult.consumerCare || { value: null, confidence: 0, status: "Missing", source: "backLabel" },
+          manufacturingDate: geminiResult.manufacturingDate || { value: null, confidence: 0, status: "Missing", source: "backLabel" },
+          packagingDate: geminiResult.packagingDate || { value: null, confidence: 0, status: "Missing", source: "backLabel" },
+          expiryDate: geminiResult.expiryDate || { value: null, confidence: 0, status: "Missing", source: "backLabel" },
+          batchNumber: geminiResult.batchNumber || { value: null, confidence: 0, status: "Missing", source: "backLabel" }
+        },
+        preprocessingStats: {
+          resolution: `${frontQuality.width} × ${frontQuality.height}`,
+          blur: combinedQuality.blurScore > 75 ? "Low" : (combinedQuality.blurScore > 45 ? "Medium" : "High"),
+          lighting: combinedQuality.brightness > 70 ? "Good" : (combinedQuality.brightness > 40 ? "Adequate" : "Needs Review"),
+          ocrReadiness: combinedQuality.score > 80 ? "Excellent" : (combinedQuality.score > 50 ? "Good" : "Poor"),
+          qualityScore: combinedQuality.score,
+          analysisType: "REAL AI ANALYSIS"
+        },
+        qualityMetrics: combinedQuality
+      };
     } catch (e) {
-      console.error('Gemini OCR API request failed, falling back to local dataset.', e);
+      console.error('Gemini OCR API request failed:', e.message);
+      throw new Error(`AI analysis temporarily unavailable: ${e.message}`);
     }
   }
 
-  // Graceful Fallback
+  // Graceful Fallback / Demo Mode
   const data = demoMockProducts[productKey] || demoMockProducts['shakti_biscuits'];
-  
-  // Fake small extraction delay
-  await new Promise(resolve => setTimeout(resolve, 800));
 
   return {
     rawText: data.rawText,
     declarations: data.declarations,
     preprocessingStats: {
-      resolution: combinedQuality.resolutionScore > 80 ? "2048 × 1536" : "1024 × 768",
-      blur: combinedQuality.blurScore > 80 ? "Low" : "Medium",
-      lighting: combinedQuality.brightness > 70 ? "Good" : "Needs Review",
-      ocrReadiness: combinedQuality.score > 85 ? "Excellent" : "Good",
-      qualityScore: combinedQuality.score
+      resolution: "2048 × 1536",
+      blur: "Low",
+      lighting: "Good",
+      ocrReadiness: "Excellent",
+      qualityScore: combinedQuality.score,
+      analysisType: "DEMO ANALYSIS"
     },
     qualityMetrics: combinedQuality
   };

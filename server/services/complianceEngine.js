@@ -134,7 +134,7 @@ function runComplianceCheck(declarations, category, activeRulesList = null) {
         ruleId: rule.ruleId,
         reason: reason,
         evidence: {
-          boundingBox: decl.region || getEvidenceCoordinates(targetField),
+          boundingBox: decl.region || null,
           text: decl.value,
           imageType: targetField === 'productName' || targetField === 'genericName' ? 'frontLabel' : 'backLabel'
         }

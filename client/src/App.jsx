@@ -769,6 +769,8 @@ function NewInspection() {
   const [analysisResult, setAnalysisResult] = useState(null);
   const [notes, setNotes] = useState('');
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [loadingStage, setLoadingStage] = useState('');
+  const [analysisError, setAnalysisError] = useState(null);
   const navigate = useNavigate();
 
   // Bounding box evidence zoom states
@@ -803,6 +805,27 @@ function NewInspection() {
     setLoading(true);
     setStep(3);
 
+    const stages = [
+      'Uploading Image',
+      'Analyzing Image Quality',
+      'Reading Label',
+      'Extracting Declarations',
+      'Checking Compliance Rules',
+      'Generating Evidence',
+      'Calculating Score',
+      'Preparing Inspection Result'
+    ];
+
+    let currentStageIndex = 0;
+    setLoadingStage(stages[0]);
+
+    const interval = setInterval(() => {
+      if (currentStageIndex < 4) {
+        currentStageIndex++;
+        setLoadingStage(stages[currentStageIndex]);
+      }
+    }, 800);
+
     const formData = new FormData();
     formData.append('category', category);
     if (frontPreview.includes('demo_biscuits_front')) {
@@ -820,10 +843,18 @@ function NewInspection() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message);
+
+      clearInterval(interval);
+
+      for (let i = 5; i < stages.length; i++) {
+        setLoadingStage(stages[i]);
+        await new Promise(r => setTimeout(r, 450));
+      }
       
       setAnalysisResult(data);
       setStep(4);
     } catch (e) {
+      clearInterval(interval);
       alert('OCR pipeline error: ' + e.message);
       setStep(1);
     } finally {
@@ -1126,7 +1157,23 @@ function NewInspection() {
       {step === 3 && (
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-12 text-center">
           <RefreshCw className="w-12 h-12 text-blue-500 animate-spin mx-auto mb-6" />
-          <h2 className="text-base font-bold text-white mb-2 uppercase tracking-wider">Processing OCR Text & Mapping Rules...</h2>
+          <h2 className="text-base font-bold text-white mb-2 uppercase tracking-wider">{loadingStage}...</h2>
+          <div className="w-full max-w-xs bg-slate-850 rounded-full h-1.5 mx-auto mb-4 overflow-hidden">
+            <div 
+              className="bg-blue-500 h-1.5 transition-all duration-500" 
+              style={{ 
+                width: `${
+                  loadingStage === 'Uploading Image' ? 12 :
+                  loadingStage === 'Analyzing Image Quality' ? 25 :
+                  loadingStage === 'Reading Label' ? 38 :
+                  loadingStage === 'Extracting Declarations' ? 50 :
+                  loadingStage === 'Checking Compliance Rules' ? 63 :
+                  loadingStage === 'Generating Evidence' ? 75 :
+                  loadingStage === 'Calculating Score' ? 88 : 100
+                }%` 
+              }}
+            ></div>
+          </div>
           <p className="text-slate-500 text-xs max-w-sm mx-auto">
             Extracting label coordinates, normalizing currencies, dates and quantities, and running structured legal metrology check engine...
           </p>
@@ -1153,6 +1200,13 @@ function NewInspection() {
                       analysisResult.riskLevel === 'HIGH' ? 'bg-red-500/10 text-red-400' : 'bg-green-500/10 text-green-400'
                     }`}>
                       {analysisResult.riskLevel} RISK
+                    </span>
+                    <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
+                      analysisResult.preprocessingStats?.analysisType === 'REAL AI ANALYSIS' 
+                        ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' 
+                        : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
+                    }`}>
+                      {analysisResult.preprocessingStats?.analysisType || 'DEMO ANALYSIS'}
                     </span>
                     <span className="text-[10px] text-slate-500">Calculated score based on active metrology rules.</span>
                   </div>
@@ -1303,28 +1357,55 @@ function NewInspection() {
                   <img 
                     src={
                       activeEvidenceField === 'productName' || activeEvidenceField === 'genericName'
-                        ? '/uploads/demo_biscuits_front.jpg' 
-                        : '/uploads/demo_biscuits_back.jpg'
+                        ? (analysisResult.images?.frontLabel || '/uploads/demo_biscuits_front.jpg')
+                        : (analysisResult.images?.backLabel || '/uploads/demo_biscuits_back.jpg')
                     } 
                     alt="Evidence label" 
                     className="max-h-full object-contain rounded"
                   />
                   
                   {/* Evidence Highlight crops coordinates */}
-                  <div 
-                    className="absolute border-2 border-red-500 bg-red-500/10 transition-all duration-300"
-                    style={{
-                      left: activeEvidenceField === 'productName' ? '30%' : (activeEvidenceField === 'genericName' ? '30%' : '15%'),
-                      top: activeEvidenceField === 'productName' ? '20%' : (activeEvidenceField === 'genericName' ? '35%' : '60%'),
-                      width: activeEvidenceField === 'productName' ? '45%' : (activeEvidenceField === 'genericName' ? '40%' : '40%'),
-                      height: activeEvidenceField === 'productName' ? '12%' : (activeEvidenceField === 'genericName' ? '8%' : '10%')
-                    }}
-                  ></div>
+                  {analysisResult.declarations?.[activeEvidenceField]?.region ? (
+                    <div 
+                      className="absolute border-2 border-red-500 bg-red-500/10 transition-all duration-300"
+                      style={{
+                        left: `${analysisResult.declarations[activeEvidenceField].region[0]}%`,
+                        top: `${analysisResult.declarations[activeEvidenceField].region[1]}%`,
+                        width: `${analysisResult.declarations[activeEvidenceField].region[2]}%`,
+                        height: `${analysisResult.declarations[activeEvidenceField].region[3]}%`
+                      }}
+                    ></div>
+                  ) : (
+                    // In demo mode or if using demo assets, fallback to the hardcoded highlights to avoid blank demo viewer
+                    (analysisResult.preprocessingStats?.analysisType !== 'REAL AI ANALYSIS') ? (
+                      <div 
+                        className="absolute border-2 border-red-500 bg-red-500/10 transition-all duration-300"
+                        style={{
+                          left: activeEvidenceField === 'productName' ? '30%' : (activeEvidenceField === 'genericName' ? '30%' : '15%'),
+                          top: activeEvidenceField === 'productName' ? '20%' : (activeEvidenceField === 'genericName' ? '35%' : '60%'),
+                          width: activeEvidenceField === 'productName' ? '45%' : (activeEvidenceField === 'genericName' ? '40%' : '40%'),
+                          height: activeEvidenceField === 'productName' ? '12%' : (activeEvidenceField === 'genericName' ? '8%' : '10%')
+                        }}
+                      ></div>
+                    ) : null
+                  )}
                 </div>
               </div>
 
-              <div className="mt-3 text-[10px] text-slate-500">
-                Active highlight field: <span className="text-white font-bold">{activeEvidenceField}</span>
+              <div className="mt-3 flex justify-between items-center text-[10px] text-slate-500">
+                <div>
+                  Active highlight field: <span className="text-white font-bold">{activeEvidenceField}</span>
+                </div>
+                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                  analysisResult.declarations?.[activeEvidenceField]?.region
+                    ? 'bg-green-500/10 text-green-400'
+                    : (analysisResult.preprocessingStats?.analysisType === 'REAL AI ANALYSIS' ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400')
+                }`}>
+                  {analysisResult.declarations?.[activeEvidenceField]?.region 
+                    ? 'Region Plotted' 
+                    : (analysisResult.preprocessingStats?.analysisType === 'REAL AI ANALYSIS' ? 'Evidence region unavailable' : 'Region Plotted (Demo)')
+                  }
+                </span>
               </div>
             </div>
 
