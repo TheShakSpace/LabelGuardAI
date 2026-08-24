@@ -681,21 +681,15 @@ app.get('/api/reports/:inspectionId', async (req, res) => {
 });
 
 // Attempt database connection
-console.log('Gemini API Key configured:', !!process.env.GEMINI_API_KEY);
+console.log('GEMINI_API_KEY configured:', process.env.GEMINI_API_KEY ? 'YES' : 'NO');
 mongoose.connect(mongoUri)
   .then(() => {
     console.log('MongoDB connected. Initializing server...');
-    if (!process.env.GEMINI_API_KEY) {
-      console.warn('--- WARNING: GEMINI_API_KEY IS NOT CONFIGURED ---');
-    }
     app.listen(PORT, () => console.log(`LabelGuard Server running on port ${PORT}`));
   })
   .catch(async (err) => {
     console.log('--- WARNING: DATABASE UNAVAILABLE ---');
     console.log('Starting in In-Memory Database Mode for local demo / offline execution.');
-    if (!process.env.GEMINI_API_KEY) {
-      console.warn('--- WARNING: GEMINI_API_KEY IS NOT CONFIGURED ---');
-    }
     isInMemoryMode = true;
     await seedMemoryDb();
     app.listen(PORT, () => console.log(`LabelGuard (In-Memory Fallback) running on port ${PORT}`));

@@ -40,7 +40,11 @@ import {
   Sliders,
   Check,
   X,
-  Play
+  Play,
+  Mail,
+  Lock,
+  Briefcase,
+  ShieldCheck
 } from 'lucide-react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -175,79 +179,141 @@ function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-955 px-4 font-sans text-slate-100">
-      <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-xl p-8 shadow-2xl">
+    <div className="min-h-screen relative flex items-center justify-center bg-[#030712] overflow-hidden px-4 font-sans text-slate-100">
+      
+      {/* Background Decorative Grid and Glowing Orbs */}
+      <div className="absolute inset-0 z-0 bg-[#030712]">
+        {/* Luminous Neon Orbs */}
+        <div className="absolute top-[20%] left-[20%] w-[350px] h-[350px] bg-blue-600/10 rounded-full blur-[120px] animate-pulse"></div>
+        <div className="absolute bottom-[20%] right-[20%] w-[400px] h-[400px] bg-purple-600/10 rounded-full blur-[140px] animate-pulse" style={{ animationDelay: '2s' }}></div>
+        
+        {/* Subtle Tech Grid Overlay */}
+        <div 
+          className="absolute inset-0 opacity-[0.03]" 
+          style={{ 
+            backgroundImage: `linear-gradient(to right, #3b82f6 1px, transparent 1px), linear-gradient(to bottom, #3b82f6 1px, transparent 1px)`,
+            backgroundSize: '40px 40px'
+          }}
+        ></div>
+        
+        {/* Tech dots */}
+        <div 
+          className="absolute inset-0 opacity-[0.02]" 
+          style={{ 
+            backgroundImage: `radial-gradient(#3b82f6 1px, transparent 1px)`,
+            backgroundSize: '20px 20px'
+          }}
+        ></div>
+      </div>
+
+      {/* Login Card Container */}
+      <div 
+        className="relative z-10 max-w-md w-full backdrop-blur-xl border rounded-[24px] p-8 shadow-2xl transition-all duration-300"
+        style={{
+          background: 'rgba(10, 20, 45, 0.65)',
+          borderColor: 'rgba(120, 170, 255, 0.25)',
+          boxShadow: '0 0 40px rgba(59, 130, 246, 0.12), 0 0 60px rgba(139, 92, 246, 0.06), inset 0 0 20px rgba(120, 170, 255, 0.05)'
+        }}
+      >
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-blue-600/10 text-blue-500 mb-3 border border-blue-500/20 animate-pulse">
-            <Shield className="w-8 h-8" />
+          {/* Animated Neon Badge Container */}
+          <div 
+            className="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-4 border transition-all duration-500 animate-pulse"
+            style={{
+              background: 'rgba(59, 130, 246, 0.08)',
+              borderColor: 'rgba(59, 130, 246, 0.3)',
+              boxShadow: '0 0 20px rgba(59, 130, 246, 0.2)'
+            }}
+          >
+            <Shield className="w-7 h-7 text-blue-400" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">LABELGUARD AI</h1>
-          <p className="text-slate-400 text-xs mt-1 uppercase tracking-wider font-semibold">
+          <h1 className="text-2xl font-bold tracking-[0.15em] text-white">LABELGUARD AI</h1>
+          <p className="text-slate-400 text-[10px] mt-1.5 uppercase tracking-widest font-semibold opacity-85">
             AI-Powered Legal Metrology Inspection & Enforcement
           </p>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-950/40 border border-red-900 text-red-400 rounded-lg text-xs flex items-center gap-2">
+          <div className="mb-5 p-3 bg-red-950/30 border border-red-800/40 text-red-400 rounded-xl text-xs flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
-        <form onSubmit={(e) => handleLogin(e)} className="space-y-4">
+        <form onSubmit={(e) => handleLogin(e)} className="space-y-5">
           <div>
-            <label className="block text-slate-400 text-xs font-semibold uppercase mb-1.5">Inspector Email</label>
-            <input 
-              type="email" 
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-850 rounded-lg py-2 px-3 text-slate-150 text-xs focus:outline-none focus:border-blue-500"
-              required
-            />
+            <label className="block text-slate-400 text-[10px] font-bold uppercase tracking-wider mb-2">Inspector Email</label>
+            <div className="relative">
+              <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-500">
+                <Mail className="w-4 h-4" />
+              </span>
+              <input 
+                type="email" 
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full bg-[#000a1e]/55 border border-[#64a0ff]/30 rounded-xl py-2.5 pl-10 pr-4 text-slate-100 text-xs transition duration-250 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 font-medium"
+                placeholder="Enter email address"
+                required
+              />
+            </div>
           </div>
           
           <div>
-            <label className="block text-slate-400 text-xs font-semibold uppercase mb-1.5">Password</label>
-            <input 
-              type="password" 
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-850 rounded-lg py-2 px-3 text-slate-150 text-xs focus:outline-none focus:border-blue-500"
-              required
-            />
+            <label className="block text-slate-400 text-[10px] font-bold uppercase tracking-wider mb-2">Password</label>
+            <div className="relative">
+              <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-500">
+                <Lock className="w-4 h-4" />
+              </span>
+              <input 
+                type="password" 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-[#000a1e]/55 border border-[#64a0ff]/30 rounded-xl py-2.5 pl-10 pr-4 text-slate-100 text-xs transition duration-250 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 font-medium"
+                placeholder="Enter password"
+                required
+              />
+            </div>
           </div>
 
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full bg-blue-650 hover:bg-blue-700 disabled:bg-blue-800 text-white font-bold py-2 rounded-lg text-xs transition flex items-center justify-center gap-2"
+            className="w-full relative overflow-hidden group bg-gradient-to-r from-blue-600 to-indigo-650 hover:from-blue-500 hover:to-indigo-500 disabled:from-blue-800 disabled:to-indigo-800 text-white font-bold py-2.5 rounded-xl text-xs uppercase tracking-wider transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0 shadow-lg shadow-blue-500/10 flex items-center justify-center gap-2 cursor-pointer"
           >
             {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Authenticate Credentials'}
           </button>
         </form>
 
-        <div className="mt-8 border-t border-slate-800 pt-4 text-center">
-          <p className="text-slate-500 text-[10px] uppercase font-bold mb-2">Select Seeded Roles</p>
+        <div className="mt-8 border-t border-slate-800/40 pt-5 text-center">
+          <p className="text-slate-500 text-[9px] uppercase tracking-widest font-bold mb-3">Select Seeded Roles</p>
           <div className="grid grid-cols-3 gap-2">
             <button 
               onClick={() => handleLogin(null, 'inspector@labelguard.ai', 'Inspector@123')}
-              className="bg-slate-950 border border-slate-800 hover:bg-slate-800 text-[10px] py-1.5 rounded font-mono text-slate-300"
+              className="bg-slate-950/40 border border-slate-800/50 hover:border-blue-500/40 hover:bg-blue-600/5 text-[10px] py-2 rounded-lg font-mono text-slate-350 transition-all duration-200 flex flex-col items-center justify-center gap-1 cursor-pointer"
             >
-              Inspector
+              <UserIcon className="w-3.5 h-3.5 text-blue-400" />
+              <span>Inspector</span>
             </button>
             <button 
               onClick={() => handleLogin(null, 'official@labelguard.ai', 'Inspector@123')}
-              className="bg-slate-950 border border-slate-800 hover:bg-slate-800 text-[10px] py-1.5 rounded font-mono text-slate-300"
+              className="bg-slate-950/40 border border-slate-800/50 hover:border-blue-500/40 hover:bg-blue-600/5 text-[10px] py-2 rounded-lg font-mono text-slate-350 transition-all duration-200 flex flex-col items-center justify-center gap-1 cursor-pointer"
             >
-              Official
+              <Briefcase className="w-3.5 h-3.5 text-blue-450" />
+              <span>Official</span>
             </button>
             <button 
               onClick={() => handleLogin(null, 'admin@labelguard.ai', 'Inspector@123')}
-              className="bg-slate-950 border border-slate-800 hover:bg-slate-800 text-[10px] py-1.5 rounded font-mono text-slate-300"
+              className="bg-slate-950/40 border border-slate-800/50 hover:border-blue-500/40 hover:bg-blue-600/5 text-[10px] py-2 rounded-lg font-mono text-slate-350 transition-all duration-200 flex flex-col items-center justify-center gap-1 cursor-pointer"
             >
-              Admin
+              <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Admin</span>
             </button>
           </div>
+        </div>
+
+        {/* Decorative Footer */}
+        <div className="mt-8 text-center text-[9px] text-slate-650 font-semibold tracking-widest uppercase select-none">
+          Secured Access • Trusted Enforcement • Safer Consumers
         </div>
       </div>
     </div>
@@ -803,6 +869,7 @@ function NewInspection() {
 
   const handleAnalyze = async () => {
     setLoading(true);
+    setAnalysisError(null);
     setStep(3);
 
     const stages = [
@@ -842,7 +909,12 @@ function NewInspection() {
         body: formData
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message);
+      if (!response.ok) {
+        const err = new Error(data.error || data.message || 'Unknown analysis error');
+        err.stage = data.stage || 'IMAGE_PROCESSING';
+        err.details = data.details || '';
+        throw err;
+      }
 
       clearInterval(interval);
 
@@ -855,7 +927,12 @@ function NewInspection() {
       setStep(4);
     } catch (e) {
       clearInterval(interval);
-      alert('OCR pipeline error: ' + e.message);
+      console.error(e);
+      setAnalysisError({
+        error: e.message,
+        stage: e.stage || 'IMAGE_PROCESSING',
+        details: e.details || e.stack || ''
+      });
       setStep(1);
     } finally {
       setLoading(false);
@@ -995,6 +1072,49 @@ function NewInspection() {
               >
                 Capture Photo
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ERROR CARD */}
+      {analysisError && (
+        <div className="bg-red-950/20 border border-red-900/40 rounded-xl p-6 mb-8 text-left">
+          <div className="flex items-start gap-4">
+            <div className="p-3 bg-red-900/30 rounded-lg text-red-400 border border-red-850">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">AI Analysis Failed</h3>
+              <p className="text-[11px] text-slate-400 mt-1">
+                An error occurred during the <strong className="text-white">{analysisError.stage}</strong> stage of the compliance analysis pipeline.
+              </p>
+              <div className="bg-slate-950 p-4 rounded-lg border border-slate-850 mt-4 font-mono text-[10px] text-red-400 max-h-40 overflow-y-auto">
+                <strong>Reason:</strong> {analysisError.error}
+                {analysisError.details && (
+                  <div className="mt-2 text-slate-500 border-t border-slate-900 pt-2 leading-relaxed">
+                    {analysisError.details}
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-4 mt-6">
+                <button
+                  onClick={() => {
+                    handleAnalyze();
+                  }}
+                  className="bg-blue-650 hover:bg-blue-700 text-white font-bold py-1.5 px-4 rounded text-[10px] uppercase tracking-wider transition"
+                >
+                  Retry Analysis
+                </button>
+                <button
+                  onClick={() => {
+                    setAnalysisError(null);
+                  }}
+                  className="bg-slate-850 hover:bg-slate-800 text-slate-350 font-bold py-1.5 px-4 rounded text-[10px] uppercase tracking-wider transition border border-slate-800"
+                >
+                  Dismiss
+                </button>
+              </div>
             </div>
           </div>
         </div>
