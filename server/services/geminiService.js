@@ -3,7 +3,61 @@ const path = require('path');
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-const GEMINI_TIMEOUT_MS = 30000;
+const GEMINI_TIMEOUT_MS = 90000;
+const GEMINI_MAX_RETRIES = 2;
+
+const wait = (milliseconds) => new Promise(resolve => setTimeout(resolve, milliseconds));
+
+function classifyGeminiStatus(status) {
+  if (status === 401 || status === 403) return 'GEMINI_AUTH_ERROR';
+  if (status === 404) return 'GEMINI_MODEL_ERROR';
+  if (status === 400) return 'GEMINI_BAD_REQUEST';
+  if (status === 429) return 'GEMINI_RATE_LIMIT';
+  if (status >= 500) return 'GEMINI_SERVER_ERROR';
+  return 'GEMINI_REQUEST_ERROR';
+}
+
+async function requestGemini(url, body) {
+  for (let attempt = 0; attempt <= GEMINI_MAX_RETRIES; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+
+      if (response.ok) return response.json();
+
+      const errorData = await response.json().catch(() => ({}));
+      const error = new Error(errorData.error?.message || `Gemini API returned status ${response.status}`);
+      error.code = classifyGeminiStatus(response.status);
+      if (![429, 500, 502, 503, 504].includes(response.status) || attempt === GEMINI_MAX_RETRIES) throw error;
+      await wait(1000 * (2 ** attempt));
+    } catch (error) {
+      if (error.code && !['GEMINI_RATE_LIMIT', 'GEMINI_SERVER_ERROR'].includes(error.code)) throw error;
+      if (attempt === GEMINI_MAX_RETRIES) {
+        if (error.name === 'AbortError') error.code = 'GEMINI_TIMEOUT';
+        if (!error.code) error.code = 'GEMINI_REQUEST_ERROR';
+        throw error;
+      }
+      await wait(1000 * (2 ** attempt));
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+}
+
+function parseStructuredResponse(text) {
+  const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+  const parsed = JSON.parse(cleaned);
+  if (!parsed || typeof parsed !== 'object' || typeof parsed.rawText !== 'string') {
+    throw new Error('Structured response is missing rawText.');
+  }
+  return parsed;
+}
 
 // Robust path resolver relative to server root directory
 function resolvePath(filePath) {
@@ -131,40 +185,18 @@ Provide all the extracted text in a single "rawText" field at the top level of y
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
   
-  let response;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+  let result;
   try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [{ parts }],
-        generationConfig: {
-          responseMimeType: "application/json"
-        }
-      }),
-      signal: controller.signal
+    result = await requestGemini(url, {
+      contents: [{ parts }],
+      generationConfig: { responseMimeType: 'application/json' }
     });
   } catch (e) {
-    const err = new Error(e.name === 'AbortError' ? 'Gemini API request timed out.' : `Gemini API request failed: ${e.message}`);
-    err.stage = 'GEMINI_REQUEST';
-    throw err;
-  } finally {
-    clearTimeout(timeout);
-  }
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    const errMsg = errorData.error?.message || `Gemini API returned status ${response.status}`;
-    const err = new Error(errMsg);
-    err.stage = 'GEMINI_RESPONSE';
+    const err = new Error(e.code === 'GEMINI_TIMEOUT' || e.name === 'AbortError' ? 'Gemini API request timed out.' : e.message);
+    err.stage = e.code || 'GEMINI_REQUEST_ERROR';
     throw err;
   }
 
-  const result = await response.json();
   const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) {
     const err = new Error('Gemini API returned an empty response.');
@@ -173,13 +205,9 @@ Provide all the extracted text in a single "rawText" field at the top level of y
   }
 
   try {
-    const parsed = JSON.parse(text);
-    if (!parsed || typeof parsed !== 'object' || typeof parsed.rawText !== 'string') {
-      throw new Error('Structured response is missing rawText.');
-    }
-    return parsed;
+    return parseStructuredResponse(text);
   } catch (parseError) {
-    console.error('Failed to parse Gemini output as JSON:', text);
+    console.error('Gemini structured response parsing failed:', parseError.message);
     const err = new Error('Model returned an invalid structured response.');
     err.stage = 'JSON_PARSE';
     throw err;

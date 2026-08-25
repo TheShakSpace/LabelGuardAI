@@ -5,6 +5,26 @@ const { analyzeImageWithGemini } = require('./geminiService');
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const OCR_PROVIDER = process.env.OCR_PROVIDER || 'demo';
+const declarationFields = [
+  'productName', 'genericName', 'mrp', 'netQuantity', 'manufacturerName',
+  'manufacturerAddress', 'packerDetails', 'importerDetails', 'countryOfOrigin',
+  'consumerCare', 'manufacturingDate', 'packagingDate', 'expiryDate', 'batchNumber'
+];
+
+function normalizeDeclaration(field, source) {
+  if (!field || typeof field !== 'object') {
+    return { value: null, confidence: 0, status: 'Missing', source, region: null };
+  }
+  const value = typeof field.value === 'string' && field.value.trim() ? field.value.trim() : null;
+  const confidence = Number.isFinite(Number(field.confidence)) ? Math.max(0, Math.min(100, Number(field.confidence))) : 0;
+  return {
+    value,
+    confidence,
+    status: value && ['Detected', 'Missing', 'Conflict', 'Low Confidence', 'Not Applicable'].includes(field.status) ? field.status : 'Missing',
+    source: typeof field.source === 'string' ? field.source : source,
+    region: Array.isArray(field.region) && field.region.length === 4 ? field.region : null
+  };
+}
 
 // Pre-defined demo labels database (used ONLY for Demo mode)
 const demoMockProducts = {
@@ -202,22 +222,10 @@ async function processImageOCR(frontImage, backImage, productKey = 'shakti_biscu
       
       return {
         rawText: geminiResult.rawText || 'OCR transcript unavailable.',
-        declarations: {
-          productName: geminiResult.productName || { value: null, confidence: 0, status: "Missing", source: "frontLabel" },
-          genericName: geminiResult.genericName || { value: null, confidence: 0, status: "Missing", source: "frontLabel" },
-          mrp: geminiResult.mrp || { value: null, confidence: 0, status: "Missing", source: "backLabel" },
-          netQuantity: geminiResult.netQuantity || { value: null, confidence: 0, status: "Missing", source: "backLabel" },
-          manufacturerName: geminiResult.manufacturerName || { value: null, confidence: 0, status: "Missing", source: "backLabel" },
-          manufacturerAddress: geminiResult.manufacturerAddress || { value: null, confidence: 0, status: "Missing", source: "backLabel" },
-          packerDetails: geminiResult.packerDetails || { value: null, confidence: 0, status: "Missing", source: "backLabel" },
-          importerDetails: geminiResult.importerDetails || { value: null, confidence: 0, status: "Missing", source: "backLabel" },
-          countryOfOrigin: geminiResult.countryOfOrigin || { value: null, confidence: 0, status: "Missing", source: "backLabel" },
-          consumerCare: geminiResult.consumerCare || { value: null, confidence: 0, status: "Missing", source: "backLabel" },
-          manufacturingDate: geminiResult.manufacturingDate || { value: null, confidence: 0, status: "Missing", source: "backLabel" },
-          packagingDate: geminiResult.packagingDate || { value: null, confidence: 0, status: "Missing", source: "backLabel" },
-          expiryDate: geminiResult.expiryDate || { value: null, confidence: 0, status: "Missing", source: "backLabel" },
-          batchNumber: geminiResult.batchNumber || { value: null, confidence: 0, status: "Missing", source: "backLabel" }
-        },
+        declarations: Object.fromEntries(declarationFields.map(field => [
+          field,
+          normalizeDeclaration(geminiResult[field], field === 'productName' || field === 'genericName' ? 'frontLabel' : 'backLabel')
+        ])),
         preprocessingStats: {
           resolution: `${frontQuality.width} × ${frontQuality.height}`,
           blur: combinedQuality.blurScore > 75 ? "Low" : (combinedQuality.blurScore > 45 ? "Medium" : "High"),
@@ -230,7 +238,9 @@ async function processImageOCR(frontImage, backImage, productKey = 'shakti_biscu
       };
     } catch (e) {
       console.error('Gemini OCR API request failed:', e.message);
-      throw new Error(`AI analysis temporarily unavailable: ${e.message}`);
+      const error = new Error(`AI analysis temporarily unavailable: ${e.message}`);
+      error.stage = e.stage || 'GEMINI_REQUEST_ERROR';
+      throw error;
     }
   }
 
