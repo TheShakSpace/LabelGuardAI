@@ -24,16 +24,30 @@ async function seed() {
     await Rule.insertMany(rulesList);
     console.log(`Seeded ${rulesList.length} Legal Metrology rules.`);
 
-    // Seed Inspector User
+    // Seed users with the role values enforced by the API and frontend.
     const hashedPassword = await bcrypt.hash('Inspector@123', 10);
-    const defaultInspector = await User.create({
+    await User.create({
       username: 'Inspector Shashi Kumar',
       email: 'inspector@labelguard.ai',
       password: hashedPassword,
       inspectorId: 'LMI-2026-089',
-      role: 'Senior Inspector'
+      role: 'INSPECTOR'
     });
-    console.log('Seeded default Inspector credentials.');
+    await User.create({
+      username: 'Controller Rajiv Nair',
+      email: 'official@labelguard.ai',
+      password: hashedPassword,
+      inspectorId: 'LMI-OFF-05',
+      role: 'OFFICIAL'
+    });
+    await User.create({
+      username: 'System Administrator',
+      email: 'admin@labelguard.ai',
+      password: hashedPassword,
+      inspectorId: 'LMI-ADMIN-01',
+      role: 'ADMIN'
+    });
+    console.log('Seeded Inspector, Official, and Admin credentials.');
 
     // Seed Companies
     const companies = [

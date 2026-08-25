@@ -36,7 +36,13 @@ const storage = multer.diskStorage({
 });
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(file.mimetype)) {
+      return cb(new Error('Only JPEG, PNG, WebP, HEIC, and HEIF images are supported.'));
+    }
+    cb(null, true);
+  }
 });
 
 // ----------------------------------------------------
@@ -568,6 +574,15 @@ app.post('/api/inspections/analyze', protect, upload.fields([
 app.post('/api/inspections', protect, async (req, res) => {
   try {
     const data = req.body;
+    const requiredFields = ['product', 'company', 'category', 'images', 'declarations', 'checks', 'violations'];
+    const missingFields = requiredFields.filter(field => data[field] === undefined || data[field] === null);
+    if (missingFields.length > 0 || !Array.isArray(data.checks) || !Array.isArray(data.violations)) {
+      return res.status(400).json({
+        message: 'Inspection payload is incomplete.',
+        missingFields: missingFields.length > 0 ? missingFields : undefined
+      });
+    }
+
     const inspectionId = `INSP-2026-${String(Math.floor(1000 + Math.random() * 9000))}`;
 
     // Log audit trail actions

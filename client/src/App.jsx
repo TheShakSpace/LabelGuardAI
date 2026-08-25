@@ -110,12 +110,12 @@ export default function App() {
                   <Routes>
                     <Route path="/dashboard" element={<Dashboard />} />
                     <Route path="/inspections" element={<InspectionsList />} />
-                    <Route path="/inspections/new" element={<NewInspection />} />
+                    <Route path="/inspections/new" element={<RoleRoute roles={['INSPECTOR', 'ADMIN']}><NewInspection /></RoleRoute>} />
                     <Route path="/inspections/:id" element={<InspectionDetails />} />
                     <Route path="/products" element={<ProductsList />} />
                     <Route path="/companies" element={<CompaniesList />} />
                     <Route path="/reports" element={<ReportsList />} />
-                    <Route path="/rules" element={<AdminRulesPage />} />
+                    <Route path="/rules" element={<RoleRoute roles={['ADMIN']}><AdminRulesPage /></RoleRoute>} />
                     <Route path="/settings" element={<SettingsPage />} />
                     <Route path="*" element={<Navigate to="/dashboard" replace />} />
                   </Routes>
@@ -138,6 +138,11 @@ function ProtectedRoute({ children }) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
   return children;
+}
+
+function RoleRoute({ roles, children }) {
+  const { user } = useContext(AuthContext);
+  return roles.includes(user?.role) ? children : <Navigate to="/dashboard" replace />;
 }
 
 // ----------------------------------------------------
@@ -435,7 +440,7 @@ function MainLayout({ children }) {
   return (
     <div className="min-h-screen flex bg-slate-955 text-slate-100 font-sans">
       {/* Sidebar */}
-      <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0">
+      <aside className="w-56 sm:w-64 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0">
         <div className="p-6 border-b border-slate-800 flex items-center justify-between">
           <Link to="/dashboard" className="flex items-center gap-2">
             <Shield className="w-6 h-6 text-blue-500" />
@@ -492,7 +497,7 @@ function MainLayout({ children }) {
       {/* Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Navbar */}
-        <header className="h-16 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-8 z-10">
+        <header className="h-16 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 sm:px-8 z-10">
           <div className="flex items-center gap-4">
             {isOnline ? (
               <span className="flex items-center gap-1.5 text-xs text-green-400 font-bold bg-green-500/10 px-2.5 py-1 rounded-full border border-green-500/20">
@@ -574,7 +579,7 @@ function MainLayout({ children }) {
         </header>
 
         {/* Content Body */}
-        <main className="flex-1 overflow-y-auto p-8 bg-slate-955">
+        <main className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-8 bg-slate-955">
           {children}
         </main>
       </div>
@@ -974,8 +979,9 @@ function NewInspection() {
       checks: finalChecks,
       violations: analysisResult.violations.filter(v => !reviewsDone[v.ruleId]),
       score: score,
-      status: score >= 90 ? 'COMPLIANT' : 'REVIEW REQUIRED',
-      riskLevel: score >= 90 ? 'LOW' : 'HIGH',
+      status: score >= 90 ? 'COMPLIANT' : (score < 50 ? 'NON-COMPLIANT' : 'REVIEW REQUIRED'),
+      riskLevel: analysisResult.riskLevel,
+      riskReasons: analysisResult.riskReasons || [],
       location: 'Regional Testing Facility',
       notes: notes
     };
@@ -993,9 +999,12 @@ function NewInspection() {
         if (response.ok) {
           setSaveSuccess(true);
           setTimeout(() => navigate('/inspections'), 1500);
+        } else {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.message || 'The inspection could not be saved.');
         }
       } catch (e) {
-        alert('Error saving inspection.');
+        setAnalysisError({ error: e.message, stage: 'SAVE_INSPECTION', details: '' });
       }
     } else {
       // Offline draft save
