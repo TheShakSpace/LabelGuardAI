@@ -237,7 +237,7 @@ async function processImageOCR(frontImage, backImage, productKey = 'shakti_biscu
         qualityMetrics: combinedQuality
       };
     } catch (e) {
-      console.error('Gemini OCR API request failed:', e.message);
+      console.error(`Gemini OCR API request failed [${e.stage || 'GEMINI_REQUEST_ERROR'}]:`, e.message);
       const error = new Error(`AI analysis temporarily unavailable: ${e.message}`);
       error.stage = e.stage || 'GEMINI_REQUEST_ERROR';
       throw error;

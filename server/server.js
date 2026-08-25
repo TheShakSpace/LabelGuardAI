@@ -12,7 +12,7 @@ const rulesList = require('./rules/rules');
 const { processImageOCR } = require('./services/ocrService');
 const { runComplianceCheck } = require('./services/complianceEngine');
 const { generateInspectionPDF } = require('./services/reportService');
-const { askCopilot } = require('./services/geminiService');
+const { askCopilot, runGeminiDiagnostics } = require('./services/geminiService');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -327,6 +327,24 @@ const protect = async (req, res, next) => {
     return res.status(401).json({ message: 'Not authorized, no token' });
   }
 };
+
+app.get('/api/diagnostics/gemini', protect, async (req, res) => {
+  try {
+    const diagnostics = await runGeminiDiagnostics();
+    res.json({
+      geminiReachable: diagnostics.text && diagnostics.image,
+      modelConfigured: diagnostics.modelConfigured,
+      imageInputSupported: diagnostics.image
+    });
+  } catch (error) {
+    res.status(502).json({
+      geminiReachable: false,
+      modelConfigured: Boolean(process.env.GEMINI_MODEL),
+      imageInputSupported: false,
+      errorCode: error.code || 'GEMINI_DIAGNOSTIC_ERROR'
+    });
+  }
+});
 
 // ----------------------------------------------------
 // AUTH ENDPOINTS
