@@ -46,8 +46,8 @@ app.use('/uploads', express.static(uploadsDir));
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
-    database: isInMemoryMode ? 'in-memory' : 'connected',
-    environment: NODE_ENV
+    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    service: 'LabelGuard AI'
   });
 });
 
