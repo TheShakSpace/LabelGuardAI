@@ -23,7 +23,7 @@ if (NODE_ENV === 'production' && !process.env.JWT_SECRET) {
 const JWT_SECRET = process.env.JWT_SECRET || 'local-development-secret';
 const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/labelguard';
 const allowedOrigins = (NODE_ENV === 'production'
-  ? [process.env.FRONTEND_URL]
+  ? [process.env.FRONTEND_URL, 'https://label-guard-ai-one.vercel.app']
   : ['http://localhost:3000', 'http://localhost:5173', process.env.FRONTEND_URL]
 ).filter(Boolean);
 
@@ -34,6 +34,12 @@ app.use(cors({
   },
   credentials: true
 }));
+app.use((req, res, next) => {
+  res.on('finish', () => {
+    console.log(`[HTTP] ${req.method} ${req.path} origin=${req.headers.origin || 'none'} status=${res.statusCode}`);
+  });
+  next();
+});
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
