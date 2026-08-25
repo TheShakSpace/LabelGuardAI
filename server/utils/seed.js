@@ -4,7 +4,7 @@ const { User, Company, Product, Inspection, Rule } = require('../models/Schemas'
 const rulesList = require('../rules/rules');
 require('dotenv').config();
 
-const mongoUri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/labelguard';
+const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/labelguard';
 
 async function seed() {
   try {

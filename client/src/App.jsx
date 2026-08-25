@@ -51,6 +51,10 @@ import {
   BarChart, Bar, Cell, PieChart, Pie
 } from 'recharts';
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+const apiUrl = (path) => `${API_BASE_URL}${path}`;
+const apiFetch = (path, options) => fetch(apiUrl(path), options);
+
 // Auth State Helpers
 const getAuthToken = () => localStorage.getItem('token');
 const setAuthToken = (token) => localStorage.setItem('token', token);
@@ -71,7 +75,7 @@ export default function App() {
       const token = getAuthToken();
       if (token) {
         try {
-          const res = await fetch('/api/auth/me', {
+          const res = await apiFetch('/api/auth/me', {
             headers: { 'Authorization': `Bearer ${token}` }
           });
           if (res.ok) {
@@ -165,7 +169,7 @@ function Login() {
     const loginPass = customPass || password;
 
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await apiFetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: loginEmail, password: loginPass })
@@ -358,7 +362,7 @@ function MainLayout({ children }) {
   // Fetch notifications
   const fetchNotifs = async () => {
     try {
-      const res = await fetch('/api/notifications', {
+      const res = await apiFetch('/api/notifications', {
         headers: { 'Authorization': `Bearer ${getAuthToken()}` }
       });
       if (res.ok) {
@@ -378,7 +382,7 @@ function MainLayout({ children }) {
 
   const handleMarkRead = async (id) => {
     try {
-      await fetch(`/api/notifications/${id}/read`, {
+      await apiFetch(`/api/notifications/${id}/read`, {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${getAuthToken()}` }
       });
@@ -399,7 +403,7 @@ function MainLayout({ children }) {
     let success = 0;
     for (const d of drafts) {
       try {
-        const res = await fetch('/api/inspections', {
+        const res = await apiFetch('/api/inspections', {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
@@ -601,7 +605,7 @@ function Dashboard() {
   useEffect(() => {
     const fetchDashboard = async () => {
       try {
-        const response = await fetch('/api/dashboard', {
+        const response = await apiFetch('/api/dashboard', {
           headers: { 'Authorization': `Bearer ${getAuthToken()}` }
         });
         const json = await response.json();
@@ -908,7 +912,7 @@ function NewInspection() {
     }
 
     try {
-      const response = await fetch('/api/inspections/analyze', {
+      const response = await apiFetch('/api/inspections/analyze', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${getAuthToken()}` },
         body: formData
@@ -988,7 +992,7 @@ function NewInspection() {
 
     if (isOnline) {
       try {
-        const response = await fetch('/api/inspections', {
+        const response = await apiFetch('/api/inspections', {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
@@ -1582,7 +1586,7 @@ function CopilotPanel({ inspectionId }) {
     setLoading(true);
 
     try {
-      const response = await fetch('/api/copilot', {
+      const response = await apiFetch('/api/copilot', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -1646,7 +1650,7 @@ function InspectionsList() {
   useEffect(() => {
     const fetchInspections = async () => {
       try {
-        const response = await fetch('/api/inspections', {
+        const response = await apiFetch('/api/inspections', {
           headers: { 'Authorization': `Bearer ${getAuthToken()}` }
         });
         const json = await response.json();
@@ -1794,7 +1798,7 @@ function InspectionDetails() {
   useEffect(() => {
     const fetchDetails = async () => {
       try {
-        const response = await fetch(`/api/inspections/${id}`, {
+        const response = await apiFetch(`/api/inspections/${id}`, {
           headers: { 'Authorization': `Bearer ${getAuthToken()}` }
         });
         const json = await response.json();
@@ -1809,7 +1813,7 @@ function InspectionDetails() {
   }, [id]);
 
   const handleDownloadReport = () => {
-    window.open(`/api/reports/${id}?authorization=Bearer ${getAuthToken()}`, '_blank');
+    window.open(apiUrl(`/api/reports/${id}?authorization=Bearer ${encodeURIComponent(`Bearer ${getAuthToken()}`)}`), '_blank');
   };
 
   if (loading) {
@@ -1918,7 +1922,7 @@ function ProductsList() {
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const response = await fetch('/api/products', {
+        const response = await apiFetch('/api/products', {
           headers: { 'Authorization': `Bearer ${getAuthToken()}` }
         });
         const json = await response.json();
@@ -1989,7 +1993,7 @@ function CompaniesList() {
   useEffect(() => {
     const fetchCompanies = async () => {
       try {
-        const response = await fetch('/api/companies', {
+        const response = await apiFetch('/api/companies', {
           headers: { 'Authorization': `Bearer ${getAuthToken()}` }
         });
         const json = await response.json();
@@ -2060,7 +2064,7 @@ function ReportsList() {
   useEffect(() => {
     const fetchInspections = async () => {
       try {
-        const response = await fetch('/api/inspections', {
+        const response = await apiFetch('/api/inspections', {
           headers: { 'Authorization': `Bearer ${getAuthToken()}` }
         });
         const json = await response.json();
@@ -2075,7 +2079,7 @@ function ReportsList() {
   }, []);
 
   const handleDownload = (id) => {
-    window.open(`/api/reports/${id}?authorization=Bearer ${getAuthToken()}`, '_blank');
+    window.open(apiUrl(`/api/reports/${id}?authorization=Bearer ${encodeURIComponent(`Bearer ${getAuthToken()}`)}`), '_blank');
   };
 
   if (loading) {
@@ -2140,7 +2144,7 @@ function AdminRulesPage() {
 
   const fetchRules = async () => {
     try {
-      const response = await fetch('/api/rules', {
+      const response = await apiFetch('/api/rules', {
         headers: { 'Authorization': `Bearer ${getAuthToken()}` }
       });
       const data = await response.json();
@@ -2158,7 +2162,7 @@ function AdminRulesPage() {
 
   const handleToggle = async (ruleId, currentActive) => {
     try {
-      const response = await fetch(`/api/rules/${ruleId}/toggle`, {
+      const response = await apiFetch(`/api/rules/${ruleId}/toggle`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

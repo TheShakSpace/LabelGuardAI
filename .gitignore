@@ -1,6 +1,10 @@
-server/.env
-client/.env
-client/dist/
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+build/
+uploads/
 server/uploads/*
 !server/uploads/.gitkeep
-node_modules/
+logs/

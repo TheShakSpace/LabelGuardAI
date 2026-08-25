@@ -16,10 +16,24 @@ const { askCopilot } = require('./services/geminiService');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || 'supersecretjwtkeyforlabelguardai123';
-const mongoUri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/labelguard';
+const NODE_ENV = process.env.NODE_ENV || 'development';
+if (NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET must be configured in production.');
+}
+const JWT_SECRET = process.env.JWT_SECRET || 'local-development-secret';
+const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/labelguard';
+const allowedOrigins = (NODE_ENV === 'production'
+  ? [process.env.FRONTEND_URL]
+  : ['http://localhost:3000', 'http://localhost:5173', process.env.FRONTEND_URL]
+).filter(Boolean);
 
-app.use(cors());
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('Origin is not allowed by CORS.'));
+  },
+  credentials: true
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -28,6 +42,14 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
 }
 app.use('/uploads', express.static(uploadsDir));
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    database: isInMemoryMode ? 'in-memory' : 'connected',
+    environment: NODE_ENV
+  });
+});
 
 // Multer storage
 const storage = multer.diskStorage({
@@ -538,6 +560,22 @@ app.post('/api/inspections/analyze', protect, upload.fields([
       if (req.files.backLabel) backPath = `/uploads/${req.files.backLabel[0].filename}`;
     }
 
+    for (const filePath of [frontPath, backPath].filter(Boolean)) {
+      const uploadedFile = path.join(__dirname, filePath.replace(/^\/uploads\//, 'uploads/'));
+      const buffer = fs.readFileSync(uploadedFile);
+      const validImage = (
+        (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) ||
+        (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) ||
+        (buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP')
+      );
+      if (!validImage) {
+        fs.unlinkSync(uploadedFile);
+        const error = new Error('The uploaded file is not a valid JPEG, PNG, or WebP image.');
+        error.stage = 'IMAGE_PROCESSING';
+        throw error;
+      }
+    }
+
     // Active rules check
     const activeRules = await db.Rule.find();
 
@@ -695,17 +733,27 @@ app.get('/api/reports/:inspectionId', async (req, res) => {
   }
 });
 
+app.use((error, req, res, next) => {
+  if (res.headersSent) return next(error);
+  const status = error.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+  res.status(status).json({ message: error.message || 'Request failed.' });
+});
+
 // Attempt database connection
 console.log('GEMINI_API_KEY configured:', process.env.GEMINI_API_KEY ? 'YES' : 'NO');
 mongoose.connect(mongoUri)
   .then(() => {
-    console.log('MongoDB connected. Initializing server...');
-    app.listen(PORT, () => console.log(`LabelGuard Server running on port ${PORT}`));
+    console.log('DATABASE MODE: MONGODB');
+    app.listen(PORT, '0.0.0.0', () => console.log(`LabelGuard Server running on port ${PORT}`));
   })
   .catch(async (err) => {
     console.log('--- WARNING: DATABASE UNAVAILABLE ---');
-    console.log('Starting in In-Memory Database Mode for local demo / offline execution.');
+    if (NODE_ENV === 'production') {
+      console.error('DATABASE MODE: IN_MEMORY (NOT PERSISTENT) - production database is unavailable.');
+    } else {
+      console.log('DATABASE MODE: IN_MEMORY (local demo / offline execution).');
+    }
     isInMemoryMode = true;
     await seedMemoryDb();
-    app.listen(PORT, () => console.log(`LabelGuard (In-Memory Fallback) running on port ${PORT}`));
+    app.listen(PORT, '0.0.0.0', () => console.log(`LabelGuard (In-Memory Fallback) running on port ${PORT}`));
   });

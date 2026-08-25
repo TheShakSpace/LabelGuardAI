@@ -3,6 +3,7 @@ const path = require('path');
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const GEMINI_TIMEOUT_MS = 30000;
 
 // Robust path resolver relative to server root directory
 function resolvePath(filePath) {
@@ -131,6 +132,8 @@ Provide all the extracted text in a single "rawText" field at the top level of y
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
   
   let response;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
   try {
     response = await fetch(url, {
       method: 'POST',
@@ -142,12 +145,15 @@ Provide all the extracted text in a single "rawText" field at the top level of y
         generationConfig: {
           responseMimeType: "application/json"
         }
-      })
+      }),
+      signal: controller.signal
     });
   } catch (e) {
-    const err = new Error(`Gemini API request failed: ${e.message}`);
+    const err = new Error(e.name === 'AbortError' ? 'Gemini API request timed out.' : `Gemini API request failed: ${e.message}`);
     err.stage = 'GEMINI_REQUEST';
     throw err;
+  } finally {
+    clearTimeout(timeout);
   }
 
   if (!response.ok) {
@@ -167,7 +173,11 @@ Provide all the extracted text in a single "rawText" field at the top level of y
   }
 
   try {
-    return JSON.parse(text);
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== 'object' || typeof parsed.rawText !== 'string') {
+      throw new Error('Structured response is missing rawText.');
+    }
+    return parsed;
   } catch (parseError) {
     console.error('Failed to parse Gemini output as JSON:', text);
     const err = new Error('Model returned an invalid structured response.');
@@ -186,6 +196,8 @@ async function askCopilot(systemPrompt, userQuery) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
   
   let response;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
   try {
     response = await fetch(url, {
       method: 'POST',
@@ -201,12 +213,15 @@ async function askCopilot(systemPrompt, userQuery) {
             ]
           }
         ]
-      })
+      }),
+      signal: controller.signal
     });
   } catch (e) {
-    const err = new Error(`Gemini API request failed: ${e.message}`);
+    const err = new Error(e.name === 'AbortError' ? 'Gemini API request timed out.' : `Gemini API request failed: ${e.message}`);
     err.stage = 'GEMINI_REQUEST';
     throw err;
+  } finally {
+    clearTimeout(timeout);
   }
 
   if (!response.ok) {
