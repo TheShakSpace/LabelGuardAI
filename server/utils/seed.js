@@ -5,11 +5,38 @@ const rulesList = require('../rules/rules');
 require('dotenv').config();
 
 const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/labelguard';
+const usersOnly = process.argv.includes('--users-only');
+
+async function seedUsersOnly() {
+  const password = 'Inspector@123';
+  const hashedPassword = await bcrypt.hash(password, 10);
+  const users = [
+    { username: 'Inspector Shashi Kumar', email: 'inspector@labelguard.ai', inspectorId: 'LMI-2026-089', role: 'INSPECTOR' },
+    { username: 'Controller Rajiv Nair', email: 'official@labelguard.ai', inspectorId: 'LMI-OFF-05', role: 'OFFICIAL' },
+    { username: 'System Administrator', email: 'admin@labelguard.ai', inspectorId: 'LMI-ADMIN-01', role: 'ADMIN' }
+  ];
+
+  let created = 0;
+  for (const user of users) {
+    const existing = await User.findOne({ email: user.email }).select('_id');
+    if (!existing) {
+      await User.create({ ...user, password: hashedPassword });
+      created += 1;
+    }
+  }
+  console.log(`Users-only seed complete. Created ${created} missing users.`);
+}
 
 async function seed() {
   try {
     await mongoose.connect(mongoUri);
     console.log('Connected to MongoDB for seeding...');
+
+    if (usersOnly) {
+      await seedUsersOnly();
+      await mongoose.disconnect();
+      return;
+    }
 
     // Clean existing data
     await User.deleteMany({});
