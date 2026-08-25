@@ -52,7 +52,10 @@ async function requestGemini(url, body) {
 
 function parseStructuredResponse(text) {
   const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
-  const parsed = JSON.parse(cleaned);
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start < 0 || end <= start) throw new Error('No JSON object found in model response.');
+  const parsed = JSON.parse(cleaned.slice(start, end + 1));
   if (!parsed || typeof parsed !== 'object' || typeof parsed.rawText !== 'string') {
     throw new Error('Structured response is missing rawText.');
   }
@@ -189,7 +192,11 @@ Provide all the extracted text in a single "rawText" field at the top level of y
   try {
     result = await requestGemini(url, {
       contents: [{ parts }],
-      generationConfig: { responseMimeType: 'application/json' }
+      generationConfig: {
+        responseMimeType: 'application/json',
+        maxOutputTokens: 4096,
+        thinkingConfig: { thinkingBudget: 0 }
+      }
     });
   } catch (e) {
     const err = new Error(e.code === 'GEMINI_TIMEOUT' || e.name === 'AbortError' ? 'Gemini API request timed out.' : e.message);
@@ -207,7 +214,7 @@ Provide all the extracted text in a single "rawText" field at the top level of y
   try {
     return parseStructuredResponse(text);
   } catch (parseError) {
-    console.error('Gemini structured response parsing failed:', parseError.message);
+    console.error(`Gemini structured response parsing failed: ${parseError.message} (length=${text.length}, finish=${result.candidates?.[0]?.finishReason || 'unknown'})`);
     const err = new Error('Model returned an invalid structured response.');
     err.stage = 'JSON_PARSE';
     throw err;
@@ -271,7 +278,33 @@ async function askCopilot(systemPrompt, userQuery) {
   return text;
 }
 
+async function runGeminiDiagnostics() {
+  const diagnostics = {
+    apiKeyConfigured: Boolean(GEMINI_API_KEY),
+    modelConfigured: Boolean(GEMINI_MODEL),
+    model: GEMINI_MODEL,
+    text: false,
+    image: false
+  };
+  if (!GEMINI_API_KEY) return diagnostics;
+
+  const textResult = await requestGemini(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+    { contents: [{ parts: [{ text: 'Reply with READY.' }] }], generationConfig: { maxOutputTokens: 8 } }
+  );
+  diagnostics.text = Boolean(textResult.candidates?.[0]);
+
+  const onePixelPng = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+  const imageResult = await requestGemini(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+    { contents: [{ parts: [{ text: 'Describe this image briefly.' }, { inlineData: { mimeType: 'image/png', data: onePixelPng } }] }], generationConfig: { maxOutputTokens: 16 } }
+  );
+  diagnostics.image = Boolean(imageResult.candidates?.[0]);
+  return diagnostics;
+}
+
 module.exports = {
   analyzeImageWithGemini,
-  askCopilot
+  askCopilot,
+  runGeminiDiagnostics
 };
