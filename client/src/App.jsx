@@ -919,9 +919,29 @@ function NewInspection() {
       });
       const data = await response.json();
       if (!response.ok) {
-        const err = new Error(data.error || data.message || 'Unknown analysis error');
-        err.stage = data.stage || 'IMAGE_PROCESSING';
-        err.details = data.details || '';
+        // Handle new error format: { error: { code, message, details } }
+        // Also handle old format: { error: string, message: string }
+        let errorMessage = 'Unknown analysis error';
+        let errorCode = 'IMAGE_PROCESSING';
+        let errorDetails = '';
+
+        if (data.error) {
+          if (typeof data.error === 'object') {
+            // New format
+            errorMessage = data.error.message || 'Analysis failed';
+            errorCode = data.error.code || 'IMAGE_PROCESSING';
+            errorDetails = data.error.details || '';
+          } else {
+            // Old format or string error
+            errorMessage = data.error;
+          }
+        } else if (data.message) {
+          errorMessage = data.message;
+        }
+
+        const err = new Error(errorMessage);
+        err.stage = errorCode;
+        err.details = errorDetails;
         throw err;
       }
 
@@ -1098,18 +1118,16 @@ function NewInspection() {
               <AlertTriangle className="w-6 h-6" />
             </div>
             <div className="flex-1">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">AI Analysis Failed</h3>
-              <p className="text-[11px] text-slate-400 mt-1">
-                An error occurred during the <strong className="text-white">{analysisError.stage}</strong> stage of the compliance analysis pipeline.
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">Analysis Could Not Complete</h3>
+              <p className="text-[12px] text-slate-300 mt-2 leading-relaxed">
+                {analysisError.error}
               </p>
-              <div className="bg-slate-950 p-4 rounded-lg border border-slate-850 mt-4 font-mono text-[10px] text-red-400 max-h-40 overflow-y-auto">
-                <strong>Reason:</strong> {analysisError.error}
-                {analysisError.details && (
-                  <div className="mt-2 text-slate-500 border-t border-slate-900 pt-2 leading-relaxed">
-                    {analysisError.details}
-                  </div>
-                )}
-              </div>
+              {analysisError.details && process.env.NODE_ENV === 'development' && (
+                <div className="bg-slate-950 p-3 rounded-lg border border-slate-850 mt-3 font-mono text-[10px] text-slate-400 max-h-32 overflow-y-auto">
+                  <strong className="text-slate-300">Technical Details:</strong>
+                  <div className="mt-1">{analysisError.details}</div>
+                </div>
+              )}
               <div className="flex gap-4 mt-6">
                 <button
                   onClick={() => {
@@ -1117,7 +1135,7 @@ function NewInspection() {
                   }}
                   className="bg-blue-650 hover:bg-blue-700 text-white font-bold py-1.5 px-4 rounded text-[10px] uppercase tracking-wider transition"
                 >
-                  Retry Analysis
+                  Try Again
                 </button>
                 <button
                   onClick={() => {

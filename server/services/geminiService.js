@@ -50,15 +50,92 @@ async function requestGemini(url, body) {
   }
 }
 
-function parseStructuredResponse(text) {
-  const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
-  const start = cleaned.indexOf('{');
-  const end = cleaned.lastIndexOf('}');
-  if (start < 0 || end <= start) throw new Error('No JSON object found in model response.');
-  const parsed = JSON.parse(cleaned.slice(start, end + 1));
-  if (!parsed || typeof parsed !== 'object' || typeof parsed.rawText !== 'string') {
-    throw new Error('Structured response is missing rawText.');
+/**
+ * Safely extracts and parses JSON from Gemini response text.
+ * Handles markdown wrappers, extra text, and malformed responses.
+ * 
+ * @param {string} text - Raw Gemini response
+ * @param {boolean} logDetails - Whether to log parsing details for debugging
+ * @returns {object} Parsed JSON object with declarations
+ * @throws Error if valid JSON cannot be extracted
+ */
+function parseStructuredResponse(text, logDetails = false) {
+  if (!text || typeof text !== 'string') {
+    const err = new Error('Response text is empty or not a string.');
+    err.stage = 'JSON_PARSE';
+    throw err;
   }
+
+  // Step 1: Remove markdown code fences (```json, ```, etc.)
+  let cleaned = text.trim();
+  
+  // Remove opening fence with optional json/JSON label
+  cleaned = cleaned.replace(/^```(?:json|JSON)?\s*\n?/i, '');
+  // Remove closing fence
+  cleaned = cleaned.replace(/\n?```\s*$/i, '');
+  
+  cleaned = cleaned.trim();
+
+  if (logDetails) {
+    console.log(`[JSON_PARSE] Input length: ${text.length}, Cleaned length: ${cleaned.length}`);
+  }
+
+  // Step 2: Find JSON object boundaries (look for first { and last })
+  const startIdx = cleaned.indexOf('{');
+  const endIdx = cleaned.lastIndexOf('}');
+
+  if (startIdx < 0 || endIdx <= startIdx) {
+    const err = new Error(`Could not find valid JSON object boundaries in response (first { at ${startIdx}, last } at ${endIdx}).`);
+    err.stage = 'JSON_PARSE';
+    throw err;
+  }
+
+  // Step 3: Extract and parse JSON
+  const jsonStr = cleaned.slice(startIdx, endIdx + 1);
+  
+  if (logDetails) {
+    console.log(`[JSON_PARSE] Extracted JSON (first 200 chars): ${jsonStr.substring(0, 200)}`);
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch (parseErr) {
+    const err = new Error(`JSON.parse() failed: ${parseErr.message} at position ~${parseErr.message.match(/position (\d+)/)?.[1] || '?'}`);
+    err.stage = 'JSON_PARSE';
+    throw err;
+  }
+
+  // Step 4: Validate essential structure
+  if (!parsed || typeof parsed !== 'object') {
+    const err = new Error('Parsed JSON is not an object.');
+    err.stage = 'JSON_PARSE';
+    throw err;
+  }
+
+  // Must have rawText field containing the OCR text
+  if (typeof parsed.rawText !== 'string' || parsed.rawText.trim() === '') {
+    const err = new Error(`Response missing or invalid 'rawText' field (got type: ${typeof parsed.rawText}).`);
+    err.stage = 'JSON_PARSE';
+    throw err;
+  }
+
+  // Validate key declaration fields exist
+  const requiredDeclarations = ['productName', 'genericName', 'mrp', 'netQuantity'];
+  const missingDeclarations = requiredDeclarations.filter(
+    field => !(field in parsed) || typeof parsed[field] !== 'object'
+  );
+  
+  if (missingDeclarations.length > 0) {
+    const err = new Error(`Response missing declaration fields: ${missingDeclarations.join(', ')}`);
+    err.stage = 'JSON_PARSE';
+    throw err;
+  }
+
+  if (logDetails) {
+    console.log('[JSON_PARSE] Validation passed. Response contains rawText and all required declaration fields.');
+  }
+
   return parsed;
 }
 
@@ -110,21 +187,33 @@ function getMimeType(filePath) {
   return 'image/jpeg';
 }
 
-async function analyzeImageWithGemini(frontImagePath, backImagePath) {
+/**
+ * Analyzes product label images using Gemini Vision API with retry logic.
+ * Extracts legal declaration fields and OCR text from front/back labels.
+ * 
+ * @param {string} frontImagePath - Path to front label image (optional)
+ * @param {string} backImagePath - Path to back label image (optional)
+ * @param {number} attemptNum - Current attempt number (for logging)
+ * @returns {object} Parsed OCR result with declarations and rawText
+ * @throws Error if analysis fails after retries
+ */
+async function analyzeImageWithGemini(frontImagePath, backImagePath, attemptNum = 1) {
   if (!GEMINI_API_KEY) {
     const err = new Error('Gemini API key is not configured on the server.');
     err.stage = 'GEMINI_AUTH';
     throw err;
   }
 
+  // Step 1: Prepare image parts
   const parts = [];
 
   if (frontImagePath) {
     try {
       const frontPart = fileToGenerativePart(frontImagePath, getMimeType(frontImagePath));
       parts.push(frontPart);
+      console.log(`[GEMINI] Loaded front image: ${frontImagePath}`);
     } catch (e) {
-      console.error('Error reading front image:', e.message);
+      console.error(`[GEMINI] Error reading front image: ${e.message}`);
       if (e.stage) throw e;
       const err = new Error(`Failed to read front image: ${e.message}`);
       err.stage = 'IMAGE_PROCESSING';
@@ -136,8 +225,9 @@ async function analyzeImageWithGemini(frontImagePath, backImagePath) {
     try {
       const backPart = fileToGenerativePart(backImagePath, getMimeType(backImagePath));
       parts.push(backPart);
+      console.log(`[GEMINI] Loaded back image: ${backImagePath}`);
     } catch (e) {
-      console.error('Error reading back image:', e.message);
+      console.error(`[GEMINI] Error reading back image: ${e.message}`);
       if (e.stage) throw e;
       const err = new Error(`Failed to read back image: ${e.message}`);
       err.stage = 'IMAGE_PROCESSING';
@@ -151,45 +241,45 @@ async function analyzeImageWithGemini(frontImagePath, backImagePath) {
     throw err;
   }
 
-  const promptText = `
-You are a Legal Metrology Compliance OCR and label verification engine.
+  // Step 2: Construct prompt with strong JSON instructions
+  const promptText = `You are a Legal Metrology Compliance OCR and label verification engine.
 Analyze the provided packaging label image(s) (which may be front and/or back labels of a product).
 Extract the required legal declarations precisely as they are written on the package.
 DO NOT infer, assume, or hallucinate any details that are not visible in the image.
+
+CRITICAL INSTRUCTION: Your response MUST be VALID JSON only. Do NOT include any markdown, explanations, or text outside the JSON object.
+
 If a declaration is not present or cannot be found, set its value to null, confidence to 0, and status to "Missing".
 If a declaration is detected, set its status to "Detected", and estimate a realistic confidence score (0 to 100) based on OCR readability.
-Specify "source" as "frontLabel" if it was found on the front label, "backLabel" if it was on the back label, or "image" if you cannot determine.
+Specify "source" as "frontLabel" if found on front, "backLabel" if on back, or "image" if you cannot determine.
 
-Provide a JSON object conforming to the following structure:
+Respond with ONLY this JSON structure (no markdown, no extra text):
 {
-  "productName": { "value": string or null, "confidence": number, "status": "Detected"|"Missing", "source": "frontLabel"|"backLabel"|"image" },
-  "genericName": { "value": string or null, "confidence": number, "status": "Detected"|"Missing", "source": "frontLabel"|"backLabel"|"image" },
-  "mrp": { "value": string or null, "confidence": number, "status": "Detected"|"Missing", "source": "frontLabel"|"backLabel"|"image" },
-  "netQuantity": { "value": string or null, "confidence": number, "status": "Detected"|"Missing", "source": "frontLabel"|"backLabel"|"image" },
-  "manufacturerName": { "value": string or null, "confidence": number, "status": "Detected"|"Missing", "source": "frontLabel"|"backLabel"|"image" },
-  "manufacturerAddress": { "value": string or null, "confidence": number, "status": "Detected"|"Missing", "source": "frontLabel"|"backLabel"|"image" },
-  "packerDetails": { "value": string or null, "confidence": number, "status": "Detected"|"Missing", "source": "frontLabel"|"backLabel"|"image" },
-  "importerDetails": { "value": string or null, "confidence": number, "status": "Detected"|"Missing", "source": "frontLabel"|"backLabel"|"image" },
-  "countryOfOrigin": { "value": string or null, "confidence": number, "status": "Detected"|"Missing", "source": "frontLabel"|"backLabel"|"image" },
-  "consumerCare": { "value": string or null, "confidence": number, "status": "Detected"|"Missing", "source": "frontLabel"|"backLabel"|"image" },
-  "manufacturingDate": { "value": string or null, "confidence": number, "status": "Detected"|"Missing", "source": "frontLabel"|"backLabel"|"image" },
-  "packagingDate": { "value": string or null, "confidence": number, "status": "Detected"|"Missing", "source": "frontLabel"|"backLabel"|"image" },
-  "expiryDate": { "value": string or null, "confidence": number, "status": "Detected"|"Missing", "source": "frontLabel"|"backLabel"|"image" },
-  "batchNumber": { "value": string or null, "confidence": number, "status": "Detected"|"Missing", "source": "frontLabel"|"backLabel"|"image" },
-  "evidence": []
-}
-
-Additionally, for any detected declarations, if you can locate the coordinates of the text region on the image, include a "region" field with normalized coordinates [x, y, width, height] where each value is a percentage from 0 to 100 relative to the image container. If coordinates are not reliably available, set "region" to null.
-If the same field has conflicting values across different panels or within the same panel, set its status to "Conflict".
-Provide all the extracted text in a single "rawText" field at the top level of your response, representing a raw transcription of all readable text on the package.
-`;
+  "rawText": "Complete transcription of all readable text on the package labels",
+  "productName": { "value": string or null, "confidence": number, "status": "Detected" or "Missing", "source": "frontLabel" or "backLabel" or "image", "region": [x,y,w,h] or null },
+  "genericName": { "value": string or null, "confidence": number, "status": "Detected" or "Missing", "source": "frontLabel" or "backLabel" or "image", "region": [x,y,w,h] or null },
+  "mrp": { "value": string or null, "confidence": number, "status": "Detected" or "Missing", "source": "frontLabel" or "backLabel" or "image", "region": [x,y,w,h] or null },
+  "netQuantity": { "value": string or null, "confidence": number, "status": "Detected" or "Missing", "source": "frontLabel" or "backLabel" or "image", "region": [x,y,w,h] or null },
+  "manufacturerName": { "value": string or null, "confidence": number, "status": "Detected" or "Missing", "source": "frontLabel" or "backLabel" or "image", "region": [x,y,w,h] or null },
+  "manufacturerAddress": { "value": string or null, "confidence": number, "status": "Detected" or "Missing", "source": "frontLabel" or "backLabel" or "image", "region": [x,y,w,h] or null },
+  "packerDetails": { "value": string or null, "confidence": number, "status": "Detected" or "Missing", "source": "frontLabel" or "backLabel" or "image", "region": [x,y,w,h] or null },
+  "importerDetails": { "value": string or null, "confidence": number, "status": "Detected" or "Missing", "source": "frontLabel" or "backLabel" or "image", "region": [x,y,w,h] or null },
+  "countryOfOrigin": { "value": string or null, "confidence": number, "status": "Detected" or "Missing", "source": "frontLabel" or "backLabel" or "image", "region": [x,y,w,h] or null },
+  "consumerCare": { "value": string or null, "confidence": number, "status": "Detected" or "Missing", "source": "frontLabel" or "backLabel" or "image", "region": [x,y,w,h] or null },
+  "manufacturingDate": { "value": string or null, "confidence": number, "status": "Detected" or "Missing", "source": "frontLabel" or "backLabel" or "image", "region": [x,y,w,h] or null },
+  "packagingDate": { "value": string or null, "confidence": number, "status": "Detected" or "Missing", "source": "frontLabel" or "backLabel" or "image", "region": [x,y,w,h] or null },
+  "expiryDate": { "value": string or null, "confidence": number, "status": "Detected" or "Missing", "source": "frontLabel" or "backLabel" or "image", "region": [x,y,w,h] or null },
+  "batchNumber": { "value": string or null, "confidence": number, "status": "Detected" or "Missing", "source": "frontLabel" or "backLabel" or "image", "region": [x,y,w,h] or null }
+}`;
 
   parts.unshift({ text: promptText });
 
+  // Step 3: Make API request with retry logic
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
   
   let result;
   try {
+    console.log(`[GEMINI] Attempt ${attemptNum}: Sending image(s) to Gemini API...`);
     result = await requestGemini(url, {
       contents: [{ parts }],
       generationConfig: {
@@ -199,11 +289,24 @@ Provide all the extracted text in a single "rawText" field at the top level of y
       }
     });
   } catch (e) {
-    const err = new Error(e.code === 'GEMINI_TIMEOUT' || e.name === 'AbortError' ? 'Gemini API request timed out.' : e.message);
+    const isRetryable = ['GEMINI_TIMEOUT', 'GEMINI_RATE_LIMIT', 'GEMINI_SERVER_ERROR'].includes(e.code);
+    const shouldRetry = isRetryable && attemptNum < 3;
+    
+    console.error(`[GEMINI] Attempt ${attemptNum} failed [${e.code || 'UNKNOWN'}]: ${e.message}`);
+    
+    if (shouldRetry) {
+      const delay = 1000 * Math.pow(2, attemptNum - 1); // exponential backoff
+      console.log(`[GEMINI] Retrying after ${delay}ms...`);
+      await wait(delay);
+      return analyzeImageWithGemini(frontImagePath, backImagePath, attemptNum + 1);
+    }
+    
+    const err = new Error(e.message);
     err.stage = e.code || 'GEMINI_REQUEST_ERROR';
     throw err;
   }
 
+  // Step 4: Extract text from response
   const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) {
     const err = new Error('Gemini API returned an empty response.');
@@ -211,13 +314,17 @@ Provide all the extracted text in a single "rawText" field at the top level of y
     throw err;
   }
 
+  console.log(`[GEMINI] Received response: ${text.length} characters, finish_reason: ${result.candidates?.[0]?.finishReason || 'unknown'}`);
+
+  // Step 5: Parse JSON with detailed error logging
   try {
-    return parseStructuredResponse(text);
+    const parsed = parseStructuredResponse(text, true); // Enable detailed logging
+    console.log(`[GEMINI] ✓ Analysis successful. Extracted rawText (${parsed.rawText?.length || 0} chars) and ${Object.keys(parsed).length - 1} declaration fields.`);
+    return parsed;
   } catch (parseError) {
-    console.error(`Gemini structured response parsing failed: ${parseError.message} (length=${text.length}, finish=${result.candidates?.[0]?.finishReason || 'unknown'})`);
-    const err = new Error('Model returned an invalid structured response.');
-    err.stage = 'JSON_PARSE';
-    throw err;
+    console.error(`[GEMINI] JSON parsing failed: ${parseError.message}`);
+    console.error(`[GEMINI] Raw response preview (first 300 chars): ${text.substring(0, 300)}`);
+    throw parseError;
   }
 }
 

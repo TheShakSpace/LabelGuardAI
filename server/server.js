@@ -584,6 +584,7 @@ app.post('/api/inspections/analyze', protect, upload.fields([
       if (req.files.backLabel) backPath = `/uploads/${req.files.backLabel[0].filename}`;
     }
 
+    // Validate uploaded images
     for (const filePath of [frontPath, backPath].filter(Boolean)) {
       const uploadedFile = path.join(__dirname, filePath.replace(/^\/uploads\//, 'uploads/'));
       const buffer = fs.readFileSync(uploadedFile);
@@ -595,18 +596,23 @@ app.post('/api/inspections/analyze', protect, upload.fields([
       if (!validImage) {
         fs.unlinkSync(uploadedFile);
         const error = new Error('The uploaded file is not a valid JPEG, PNG, or WebP image.');
-        error.stage = 'IMAGE_PROCESSING';
+        error.stage = 'IMAGE_VALIDATION';
         throw error;
       }
     }
 
-    // Active rules check
+    // Get active rules
     const activeRules = await db.Rule.find();
 
+    // Process OCR
+    console.log(`[ANALYSIS] Starting OCR analysis for category: ${category || 'Food Products'}`);
     const ocrResult = await processImageOCR(frontPath, backPath, demoProductKey || 'shakti_biscuits');
+    
+    // Run compliance verification
     const verification = runComplianceCheck(ocrResult.declarations, category || 'Food Products', activeRules);
 
     res.json({
+      success: true,
       images: {
         frontLabel: frontPath || '/uploads/placeholder_front.jpg',
         backLabel: backPath || '/uploads/placeholder_back.jpg'
@@ -623,12 +629,29 @@ app.post('/api/inspections/analyze', protect, upload.fields([
       qualityMetrics: ocrResult.qualityMetrics
     });
   } catch (error) {
-    console.error("Analysis route error:", error);
+    console.error(`[ANALYSIS] Error at stage '${error.stage || 'UNKNOWN'}': ${error.message}`);
+    
+    // Map error stages to user-friendly messages
+    const errorMap = {
+      'IMAGE_VALIDATION': 'The uploaded file is not a valid image. Please upload a JPEG, PNG, or WebP file.',
+      'IMAGE_PROCESSING': 'Could not process the image. Please ensure the image is clear and valid.',
+      'GEMINI_AUTH': 'AI service authentication failed. Please contact system administrator.',
+      'GEMINI_TIMEOUT': 'AI analysis took too long. Please try again in a moment.',
+      'GEMINI_RATE_LIMIT': 'AI service is busy. Please wait a moment and try again.',
+      'GEMINI_SERVER_ERROR': 'AI service is temporarily unavailable. Please try again later.',
+      'GEMINI_RESPONSE': 'AI service returned an invalid response. Please try again.',
+      'JSON_PARSE': 'Failed to process AI response. Please try again.'
+    };
+
+    const userMessage = errorMap[error.stage] || 'AI analysis failed. Please try again or contact support.';
+
     res.status(500).json({
       success: false,
-      error: error.message,
-      details: error.stack,
-      stage: error.stage || 'IMAGE_PROCESSING'
+      error: {
+        code: error.stage || 'ANALYSIS_ERROR',
+        message: userMessage,
+        details: NODE_ENV === 'development' ? error.message : undefined
+      }
     });
   }
 });

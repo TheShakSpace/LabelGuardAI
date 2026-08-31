@@ -213,40 +213,49 @@ async function processImageOCR(frontImage, backImage, productKey = 'shakti_biscu
   // 2. OCR Extraction Core
   if (isRealUpload && OCR_PROVIDER === 'gemini') {
     if (!GEMINI_API_KEY) {
-      throw new Error('GEMINI_API_KEY environment variable is missing.');
-    }
-    
-    console.log('Sending real image(s) to Gemini Vision API for extraction...');
-    try {
-      const geminiResult = await analyzeImageWithGemini(frontImage, backImage);
-      
-      return {
-        rawText: geminiResult.rawText || 'OCR transcript unavailable.',
-        declarations: Object.fromEntries(declarationFields.map(field => [
-          field,
-          normalizeDeclaration(geminiResult[field], field === 'productName' || field === 'genericName' ? 'frontLabel' : 'backLabel')
-        ])),
-        preprocessingStats: {
-          resolution: `${frontQuality.width} × ${frontQuality.height}`,
-          blur: combinedQuality.blurScore > 75 ? "Low" : (combinedQuality.blurScore > 45 ? "Medium" : "High"),
-          lighting: combinedQuality.brightness > 70 ? "Good" : (combinedQuality.brightness > 40 ? "Adequate" : "Needs Review"),
-          ocrReadiness: combinedQuality.score > 80 ? "Excellent" : (combinedQuality.score > 50 ? "Good" : "Poor"),
-          qualityScore: combinedQuality.score,
-          analysisType: "REAL AI ANALYSIS"
-        },
-        qualityMetrics: combinedQuality
-      };
-    } catch (e) {
-      console.error(`Gemini OCR API request failed [${e.stage || 'GEMINI_REQUEST_ERROR'}]:`, e.message);
-      const error = new Error(`AI analysis temporarily unavailable: ${e.message}`);
-      error.stage = e.stage || 'GEMINI_REQUEST_ERROR';
-      throw error;
+      console.warn('[OCR] Gemini API key not configured. Falling back to demo mode.');
+      // Gracefully fall back to demo
+    } else {
+      console.log('[OCR] Sending real image(s) to Gemini Vision API for extraction...');
+      try {
+        const geminiResult = await analyzeImageWithGemini(frontImage, backImage);
+        
+        console.log('[OCR] ✓ Gemini analysis successful');
+        return {
+          rawText: geminiResult.rawText || 'OCR transcript unavailable.',
+          declarations: Object.fromEntries(declarationFields.map(field => [
+            field,
+            normalizeDeclaration(geminiResult[field], field === 'productName' || field === 'genericName' ? 'frontLabel' : 'backLabel')
+          ])),
+          preprocessingStats: {
+            resolution: `${frontQuality.width} × ${frontQuality.height}`,
+            blur: combinedQuality.blurScore > 75 ? "Low" : (combinedQuality.blurScore > 45 ? "Medium" : "High"),
+            lighting: combinedQuality.brightness > 70 ? "Good" : (combinedQuality.brightness > 40 ? "Adequate" : "Needs Review"),
+            ocrReadiness: combinedQuality.score > 80 ? "Excellent" : (combinedQuality.score > 50 ? "Good" : "Poor"),
+            qualityScore: combinedQuality.score,
+            analysisType: "REAL AI ANALYSIS"
+          },
+          qualityMetrics: combinedQuality
+        };
+      } catch (e) {
+        console.error(`[OCR] Gemini OCR API failed [${e.stage || 'UNKNOWN'}]: ${e.message}`);
+        console.log('[OCR] Note: This is a real image upload that failed. Error is being propagated to frontend.');
+        
+        // For real uploads, propagate the error up - don't silently fall back
+        const error = new Error(e.message);
+        error.stage = e.stage || 'GEMINI_REQUEST_ERROR';
+        throw error;
+      }
     }
   }
 
   // Graceful Fallback / Demo Mode
+  // This is reached if:
+  // 1. It's a demo upload (OCR_PROVIDER not 'gemini' or demo image path)
+  // 2. Gemini API key not configured
   const data = demoMockProducts[productKey] || demoMockProducts['shakti_biscuits'];
 
+  console.log(`[OCR] Using DEMO mode analysis for product key: ${productKey}`);
   return {
     rawText: data.rawText,
     declarations: data.declarations,
